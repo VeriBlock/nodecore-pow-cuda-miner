@@ -1,0 +1,1 @@
+# NodeCore-PoW-CUDA-Miner
