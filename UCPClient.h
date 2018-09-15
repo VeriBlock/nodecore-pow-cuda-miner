@@ -21,6 +21,7 @@
 #define SOCKET_ERROR -1
 #define SOCKADDR_IN sockaddr_in
 #define SOCKADDR sockaddr
+#define SOCKET int
 #endif
 #include <iostream>
 #include <string>
@@ -276,7 +277,7 @@ private:
 			closesocket(ucpServerSocket);
 			WSACleanup();
 #else
-			sprintf(outputBuffer, "Reading from socket during setup resulted in an error %d", success());
+			sprintf(outputBuffer, "Reading from socket during setup resulted in an error %d", success);
 			cerr << outputBuffer << endl;
 			Log::error(outputBuffer);
 			close(ucpServerSocket);
@@ -886,8 +887,12 @@ public:
 			sprintf(outputBuffer, "Pool server appears unresponsive! Exiting...");
 			cerr << outputBuffer << endl;
 			Log::error(outputBuffer);
+#ifdef _WIN32
 			closesocket(ucpServerSocket);
 			WSACleanup();
+#else
+			close(ucpServerSocket);
+#endif
 			promptExit(-1);
 		}
 
