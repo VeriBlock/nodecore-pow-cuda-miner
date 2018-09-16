@@ -168,7 +168,7 @@ Example GPUs
       2060, 2070, 2080, 2080 Ti
     </td>
     <td>
-      sm_72
+      sm_80
     </td>
     <td>
       compute_80;sm_80
