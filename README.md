@@ -171,7 +171,7 @@ Example GPUs
       sm_72
     </td>
     <td>
-      compute_72;sm_72
+      compute_80;sm_80
     </td>
   </tr>
   </table>
