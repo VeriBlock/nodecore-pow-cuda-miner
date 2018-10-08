@@ -7,10 +7,15 @@
 
 #include <stdlib.h>
 #include "UCPClient.h"
+
 #ifdef _WIN32
 #include <Windows.h>
 #include <VersionHelpers.h>
+#elif __linux__
+#include <sys/socket.h> 
+#include <netdb.h>
 #endif
+
 #include <ctime>
 #include "Log.h"
 #include <sstream>
@@ -12111,8 +12116,8 @@ int threadsPerBlock = DEFAULT_THREADS_PER_BLOCK;
 bool verboseOutput = false;
 
 /*
- * Kernel function to search a range of nonces for a solution falling under the macro-configured difficulty (CPU=2^24, GPU=2^32). 
- */
+* Kernel function to search a range of nonces for a solution falling under the macro-configured difficulty (CPU=2^24, GPU=2^32).
+*/
 __global__ void vblakeHasher(uint32_t *nonceStart, uint32_t *nonceOut, uint64_t *hashStartOut, uint64_t const *headerIn)
 {
 	// Generate a unique starting nonce for each thread that doesn't overlap with the work of any other thread
@@ -12242,8 +12247,78 @@ void printHelpAndExit() {
 	printf("-v <enableVerboseOutput>   Whether to enable verbose output for debugging (default false)\n");
 	printf("\n");
 	printf("Example command line:\n");
-	printf("VeriBlock-NodeCore-PoW-CUDA -u VHT36jJyoVFN7ap5Gu77Crua2BMv5j -o 94.130.64.18:8501 -l false\n");
+	printf("VeriBlock-NodeCore-PoW-CUDA -u VHT36jJyoVFN7ap5Gu77Crua2BMv5j -o testnet-pool-gpu.veriblock.org:8501 -l false\n");
 	promptExit(0);
+}
+
+#ifdef _WIN32
+static WSADATA g_wsa_data;
+#endif
+
+char net_init(void)
+{
+#ifdef _WIN32
+	return (WSAStartup(MAKEWORD(2, 2), &g_wsa_data) == NO_ERROR);
+#elif __linux__
+	return 1;
+#endif
+}
+
+void net_deinit(void)
+{
+#ifdef _WIN32
+	WSACleanup();
+#endif
+}
+
+string net_dns_resolve(const char* hostname)
+{
+	struct addrinfo hints, *results, *item;
+	int status;
+	char ipstr[INET6_ADDRSTRLEN];
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;  /* AF_INET6 to force version */
+	hints.ai_socktype = SOCK_STREAM;
+
+	if ((status = getaddrinfo(hostname, NULL, &hints, &results)) != 0)
+	{
+		fprintf(stderr, "failed to resolve hostname \"%s\": %s", hostname, gai_strerror(status));
+		return "invalid hostname";
+	}
+
+	printf("IP addresses for %s:\n\n", hostname);
+
+	string ret;
+
+	for (item = results; item != NULL; item = item->ai_next)
+	{
+		void* addr;
+		char* ipver;
+
+		/* get pointer to the address itself */
+		/* different fields in IPv4 and IPv6 */
+		if (item->ai_family == AF_INET)  /* address is IPv4 */
+		{
+			struct sockaddr_in* ipv4 = (struct sockaddr_in*)item->ai_addr;
+			addr = &(ipv4->sin_addr);
+			ipver = "IPv4";
+		}
+		else  /* address is IPv6 */
+		{
+			struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)item->ai_addr;
+			addr = &(ipv6->sin6_addr);
+			ipver = "IPv6";
+		}
+
+		/* convert IP to a string and print it */
+		inet_ntop(item->ai_family, addr, ipstr, sizeof ipstr);
+		printf("  %s: %s\n", ipver, ipstr);
+		ret = ipstr;
+	}
+
+	freeaddrinfo(results);
+	return ret;
 }
 
 char outputBuffer[8192];
@@ -12301,27 +12376,27 @@ int main(int argc, char *argv[])
 			{
 				threadsPerBlock = stoi(argv[i + 1]);
 			}
-			else if (!strcmp(argument, "-bs")) 
+			else if (!strcmp(argument, "-bs"))
 			{
 				blocksize = stoi(argv[i + 1]);
 			}
 			else if (!strcmp(argument, "-l"))
 			{
 				// to lower case conversion
-				for (int j = 0; j < strlen(argv[i + 1]); j++) 
+				for (int j = 0; j < strlen(argv[i + 1]); j++)
 				{
 					argv[i + 1][j] = tolower(argv[i + 1][j]);
 				}
-				if (!strcmp(argv[i + 1], "true") || !strcmp(argv[i + 1], "t")) 
+				if (!strcmp(argv[i + 1], "true") || !strcmp(argv[i + 1], "t"))
 				{
 					Log::setEnabled(true);
 				}
-				else 
+				else
 				{
 					Log::setEnabled(false);
 				}
 			}
-			else if (!strcmp(argument, "-v")) 
+			else if (!strcmp(argument, "-v"))
 			{
 				// to lower case conversion
 				for (int j = 0; j < strlen(argv[i + 1]); j++)
@@ -12396,7 +12471,7 @@ int main(int argc, char *argv[])
 #endif
 
 	if (hostAndPort.compare("") == 0) {
-		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501";
+		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501 or localhost:8501";
 		cerr << error << endl;
 		Log::error(error);
 		promptExit(-1);
@@ -12410,11 +12485,16 @@ int main(int argc, char *argv[])
 	}
 
 	string host = hostAndPort.substr(0, hostAndPort.find(":"));
+	//GetHostByName
+	net_init();
+	host = net_dns_resolve(host.c_str());
+	net_deinit();
+
 	string portString = hostAndPort.substr(hostAndPort.find(":") + 1);
 
 	// Ensure that port is numeric
 	if (portString.find_first_not_of("1234567890") != string::npos) {
-		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501";
+		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501 or localhost:8501";
 		cerr << error << endl;
 		Log::error(error);
 		promptExit(-1);
@@ -12557,7 +12637,7 @@ int main(int argc, char *argv[])
 	}
 
 	cudaDeviceReset();
-	
+
 	// Don't have GPU busy-wait on GPU
 	ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
 
@@ -12586,7 +12666,7 @@ int main(int argc, char *argv[])
 		count++;
 		long timestamp = (long)std::time(0);
 		delete[] header;
-	    vprintf("Getting work...\n");
+		vprintf("Getting work...\n");
 		header = getWork(ucpClient, timestamp);
 		vprintf("Getting job id...\n");
 		int jobId = ucpClient.getJobId();
