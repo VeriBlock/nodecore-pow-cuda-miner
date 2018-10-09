@@ -151,7 +151,7 @@ Example GPUs
     sm_60
     </td>
     <td>
-      compute_60;sm_60
+      compute_61;sm_61
     </td>
   </tr>
   <tr>
@@ -179,7 +179,7 @@ Example GPUs
       sm_80
     </td>
     <td>
-      compute_80;sm_80
+      compute_75;sm_75
     </td>
   </tr>
   </table>
