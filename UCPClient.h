@@ -690,17 +690,30 @@ private:
 			}
 
 			while ((!check1)) {
-				long result = recv(ucpServerSocket, message + cursor, 1,
-#ifdef _WIN32
-					NULL
-#else
-					0
-#endif
-				);
+				try {
+					long result = recv(ucpServerSocket, message + cursor, 1,
+				#ifdef _WIN32
+						NULL
+				#else
+						0
+				#endif
+					);
+				}
+				catch(char* e)
+				{
+					//ex
+				}
 
 				cursor++;
 
-				check1 = message[cursor - 1] == '\n';
+				if ((message != nullptr) && (message[0] == '\0'))
+				{					
+					Sleep(1000);
+				}
+				else
+				{
+					check1 = message[cursor - 1] == '\n';
+				}
 			}
 
 			Log::info("Processing command:");
