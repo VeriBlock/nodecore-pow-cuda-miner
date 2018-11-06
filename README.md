@@ -1,10 +1,10 @@
 Latest downloads
 
-Linux
-https://github.com/VeriBlock/nodecore-pow-cuda-miner/releases/download/v0.3.5/nodecore-pow-cuda-miner-linux-0.3.5.zip
+Linux 
+https://github.com/VeriBlock/nodecore-pow-cuda-miner/releases/download/v0.3.7/nodecore-pow-cuda-miner-linux-0.3.7.zip
 
-Windows
-https://github.com/VeriBlock/nodecore-pow-cuda-miner/releases/download/v0.3.5/nodecore-pow-cuda-miner-windows-0.3.5.zip
+Windows 
+https://github.com/VeriBlock/nodecore-pow-cuda-miner/releases/download/v0.3.7/nodecore-pow-cuda-miner-windows-0.3.7-cuda-9.2.zip
 
 # NodeCore PoW CUDA Miner
 ## Contents
