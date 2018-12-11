@@ -6,19 +6,10 @@
 #include <stdio.h>
 
 #include <stdlib.h>
-#include "UCPClient.h"
-
-#ifdef _WIN32
-#include <Windows.h>
-#include <VersionHelpers.h>
-#elif __linux__
-#include <sys/socket.h> 
-#include <netdb.h>
-#endif
-
 #include <ctime>
-#include "Log.h"
 #include <sstream>
+
+#include "Log.h"
 #include "Constants.h"
 
 #if NVML
@@ -12096,24 +12087,6 @@ uint64_t vBlake(const uint64_t h0, const uint64_t h1, const uint64_t h2, const u
 	return result;
 }
 
-#if CPU_SHARES
-#define WORK_PER_THREAD 256
-#else
-#define WORK_PER_THREAD 256
-#endif
-
-#if HIGH_RESOURCE
-#define DEFAULT_BLOCKSIZE 512
-#define DEFAULT_THREADS_PER_BLOCK 1024
-#else
-#define DEFAULT_BLOCKSIZE 512
-#define DEFAULT_THREADS_PER_BLOCK 512
-#endif
-
-int blocksize = DEFAULT_BLOCKSIZE;
-int threadsPerBlock = DEFAULT_THREADS_PER_BLOCK;
-
-bool verboseOutput = false;
 
 /*
 * Kernel function to search a range of nonces for a solution falling under the macro-configured difficulty (CPU=2^24, GPU=2^32).
@@ -12153,619 +12126,13 @@ __global__ void vblakeHasher(uint32_t *nonceStart, uint32_t *nonceOut, uint64_t 
 	}
 }
 
-void promptExit(int exitCode)
-{
-	cout << "Exiting in 10 seconds..." << endl;
-	std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-	exit(exitCode);
-}
-
-/**
-* Takes the provided timestamp and places it in the header
-*/
-void embedTimestampInHeader(uint8_t *header, uint32_t timestamp)
-{
-	header[55] = (timestamp & 0x000000FF);
-	header[54] = (timestamp & 0x0000FF00) >> 8;
-	header[53] = (timestamp & 0x00FF0000) >> 16;
-	header[52] = (timestamp & 0xFF000000) >> 24;
-}
-
-/**
-* Returns a 64-byte header to attempt to mine with.
-*/
-uint64_t* getWork(UCPClient& ucpClient, uint32_t timestamp)
-{
-	uint64_t *header = new uint64_t[8];
-	ucpClient.copyHeaderToHash((byte *)header);
-	embedTimestampInHeader((uint8_t*)header, timestamp);
-	return header;
-}
-
-int deviceToUse = 0;
-
-#if NVML
-nvmlDevice_t device;
-void readyNVML(int deviceIndex) {
-	nvmlInit();
-	nvmlDeviceGetHandleByIndex(deviceIndex, &device);
-}
-int getTemperature() {
-	unsigned int temperature;
-	nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temperature);
-	return temperature;
-}
-
-int getCoreClock() {
-	unsigned int clock;
-	nvmlDeviceGetClock(device, NVML_CLOCK_GRAPHICS, NVML_CLOCK_ID_CURRENT, &clock);
-	return clock;
-}
-
-int getMemoryClock() {
-	unsigned int memClock;
-	nvmlDeviceGetClock(device, NVML_CLOCK_MEM, NVML_CLOCK_ID_CURRENT, &memClock);
-	return memClock;
-}
-#else
-void readyNVML(int deviceIndex) {
-	// Do Nothing
-}
-
-int getTemperature() {
-	return -1;
-}
-
-int getCoreClock() {
-	return -1;
-}
-
-int getMemoryClock() {
-	return -1;
-}
-#endif
-
 #define SHARE_SUBMISSION_NO_RESPONSE_WARN_THRESHOLD 50
-
-void vprintf(char* toprint) {
-	if (verboseOutput) {
-		printf(toprint);
-	}
-}
-
-void printHelpAndExit() {
-	printf("VeriBlock vBlake GPU CUDA Miner v1.0\n");
-	printf("Required Arguments:\n");
-	printf("-o <poolAddress>           The pool address to mine to in the format host:port\n");
-	printf("-u <username>              The username (often an address) used at the pool\n");
-	printf("Optional Arguments:\n");
-	printf("-p <password>              The miner/worker password to use on the pool\n");
-	printf("-d <deviceNum>             The ordinal of the device to use (default 0)\n");
-	printf("-tpb <threadPerBlock>      The threads per block to use with the Blake kernel (default %d)\n", DEFAULT_THREADS_PER_BLOCK);
-	printf("-bs <blockSize>            The blocksize to use with the vBlake kernel (default %d)\n", DEFAULT_BLOCKSIZE);
-	printf("-l <enableLogging>         Whether to log to a file (default true)\n");
-	printf("-v <enableVerboseOutput>   Whether to enable verbose output for debugging (default false)\n");
-	printf("\n");
-	printf("Example command line:\n");
-	printf("VeriBlock-NodeCore-PoW-CUDA -u VHT36jJyoVFN7ap5Gu77Crua2BMv5j -o testnet-pool-gpu.veriblock.org:8501 -l false\n");
-	promptExit(0);
-}
-
-#ifdef _WIN32
-static WSADATA g_wsa_data;
-#endif
-
-char net_init(void)
-{
-#ifdef _WIN32
-	return (WSAStartup(MAKEWORD(2, 2), &g_wsa_data) == NO_ERROR);
-#elif __linux__
-	return 1;
-#endif
-}
-
-void net_deinit(void)
-{
-#ifdef _WIN32
-	WSACleanup();
-#endif
-}
-
-string net_dns_resolve(const char* hostname)
-{
-	struct addrinfo hints, *results, *item;
-	int status;
-	char ipstr[INET6_ADDRSTRLEN];
-
-	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;  /* AF_INET6 to force version */
-	hints.ai_socktype = SOCK_STREAM;
-
-	if ((status = getaddrinfo(hostname, NULL, &hints, &results)) != 0)
-	{
-		fprintf(stderr, "failed to resolve hostname \"%s\": %s", hostname, gai_strerror(status));
-		return "invalid hostname";
-	}
-
-	printf("IP addresses for %s:\n\n", hostname);
-
-	string ret;
-
-	for (item = results; item != NULL; item = item->ai_next)
-	{
-		void* addr;
-		char* ipver;
-
-		/* get pointer to the address itself */
-		/* different fields in IPv4 and IPv6 */
-		if (item->ai_family == AF_INET)  /* address is IPv4 */
-		{
-			struct sockaddr_in* ipv4 = (struct sockaddr_in*)item->ai_addr;
-			addr = &(ipv4->sin_addr);
-			ipver = "IPv4";
-		}
-		else  /* address is IPv6 */
-		{
-			struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)item->ai_addr;
-			addr = &(ipv6->sin6_addr);
-			ipver = "IPv6";
-		}
-
-		/* convert IP to a string and print it */
-		inet_ntop(item->ai_family, addr, ipstr, sizeof ipstr);
-		printf("  %s: %s\n", ipver, ipstr);
-		ret = ipstr;
-	}
-
-	freeaddrinfo(results);
-	return ret;
-}
-
-char outputBuffer[8192];
-int main(int argc, char *argv[])
-{
-	// Check for help argument (only -h)
-	for (int i = 1; i < argc; i++) {
-		char* argument = argv[i];
-
-		if (!strcmp(argument, "-h"))
-		{
-			printHelpAndExit();
-		}
-	}
-
-	if (argc % 2 != 1) {
-		sprintf(outputBuffer, "GPU miner must be provided valid argument pairs!");
-		cerr << outputBuffer << endl;
-		printHelpAndExit();
-	}
-
-	string hostAndPort = ""; //  "94.130.64.18:8501";
-	string username = ""; // "VGX71bcRsEh4HZzhbA9Nj7GQNH5jGw";
-	string password = "";
-
-	if (argc > 1)
-	{
-		for (int i = 1; i < argc; i += 2)
-		{
-			char* argument = argv[i];
-			printf("%s\n", argument);
-			if (argument[0] == '-' && argument[1] == 'd')
-			{
-				if (strlen(argv[i + 1]) == 2) {
-					// device num >= 10
-					deviceToUse = (argv[i + 1][0] - 48) * 10 + (argv[i + 1][1] - 48);
-				}
-				else {
-					deviceToUse = argv[i + 1][0] - 48;
-				}
-			}
-			else if (!strcmp(argument, "-o"))
-			{
-				hostAndPort = string(argv[i + 1]);
-			}
-			else if (!strcmp(argument, "-u"))
-			{
-				username = string(argv[i + 1]);
-			}
-			else if (!strcmp(argument, "-p"))
-			{
-				password = string(argv[i + 1]);
-			}
-			else if (!strcmp(argument, "-tpb"))
-			{
-				threadsPerBlock = stoi(argv[i + 1]);
-			}
-			else if (!strcmp(argument, "-bs"))
-			{
-				blocksize = stoi(argv[i + 1]);
-			}
-			else if (!strcmp(argument, "-l"))
-			{
-				// to lower case conversion
-				for (int j = 0; j < strlen(argv[i + 1]); j++)
-				{
-					argv[i + 1][j] = tolower(argv[i + 1][j]);
-				}
-				if (!strcmp(argv[i + 1], "true") || !strcmp(argv[i + 1], "t"))
-				{
-					Log::setEnabled(true);
-				}
-				else
-				{
-					Log::setEnabled(false);
-				}
-			}
-			else if (!strcmp(argument, "-v"))
-			{
-				// to lower case conversion
-				for (int j = 0; j < strlen(argv[i + 1]); j++)
-				{
-					argv[i + 1][j] = tolower(argv[i + 1][j]);
-				}
-				if (!strcmp(argv[i + 1], "true") || !strcmp(argv[i + 1], "t"))
-				{
-					verboseOutput = true;
-				}
-				else
-				{
-					verboseOutput = false;
-				}
-			}
-		}
-	}
-	else {
-		printHelpAndExit();
-	}
-
-	if (HIGH_RESOURCE) {
-		sprintf(outputBuffer, "Resource Utilization: HIGH");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-	else {
-		sprintf(outputBuffer, "Resource Utilization: LOW");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-
-	if (NVML) {
-		sprintf(outputBuffer, "NVML Status: ENABLED");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-	else {
-		sprintf(outputBuffer, "NVML Status: DISABLED");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-
-	if (CPU_SHARES) {
-		sprintf(outputBuffer, "Share Type: CPU");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-	else {
-		sprintf(outputBuffer, "Share Type: GPU");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-
-	if (BENCHMARK) {
-		sprintf(outputBuffer, "Benchmark Mode: ENABLED");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-	else {
-		sprintf(outputBuffer, "Benchmark Mode: DISABLED");
-		cerr << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-
-	// No effect if NVML is not enabled
-	readyNVML(deviceToUse);
-
-#ifdef _WIN32
-	HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-#else
-#endif
-
-	if (hostAndPort.compare("") == 0) {
-		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501 or localhost:8501";
-		cerr << error << endl;
-		Log::error(error);
-		promptExit(-1);
-	}
-
-	if (username.compare("") == 0) {
-		string error = "You must specify a username in the command line arguments! Example: \n-u V5bLSbCqj9VzQR3MNANqL13YC2tUep";
-		cerr << error << endl;
-		Log::error(error);
-		promptExit(-1);
-	}
-
-	string host = hostAndPort.substr(0, hostAndPort.find(":"));
-	//GetHostByName
-	net_init();
-	host = net_dns_resolve(host.c_str());
-	net_deinit();
-
-	string portString = hostAndPort.substr(hostAndPort.find(":") + 1);
-
-	// Ensure that port is numeric
-	if (portString.find_first_not_of("1234567890") != string::npos) {
-		string error = "You must specify a host in the command line arguments! Example: \n-o 127.0.0.1:8501 or localhost:8501";
-		cerr << error << endl;
-		Log::error(error);
-		promptExit(-1);
-	}
-
-	int port = stoi(portString);
-
-	sprintf(outputBuffer, "Attempting to mine to pool %s:%d with username %s and password %s...", host.c_str(), port, username.c_str(), password.c_str());
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-	UCPClient ucpClient(host, port, username, password);
-
-	byte target[24];
-	ucpClient.copyMiningTarget(target);
-
-	sprintf(outputBuffer, "Using Device: %d\n\n", deviceToUse);
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-
-	int version, ret;
-	ret = cudaDriverGetVersion(&version);
-	if (ret != cudaSuccess)
-	{
-		sprintf(outputBuffer, "Error when getting CUDA driver version: %d", ret);
-		cout << outputBuffer << endl;
-		Log::error(outputBuffer);
-		promptExit(-1);
-	}
-
-	int runtimeVersion;
-	ret = cudaRuntimeGetVersion(&runtimeVersion);
-	if (ret != cudaSuccess)
-	{
-		sprintf(outputBuffer, "Error when getting CUDA runtime version: %d", ret);
-		cout << outputBuffer << endl;
-		Log::error(outputBuffer);
-		promptExit(-1);
-	}
-
-
-	int deviceCount;
-	ret = cudaGetDeviceCount(&deviceCount);
-	if (ret != cudaSuccess)
-	{
-		sprintf(outputBuffer, "Error when getting CUDA device count: %d", ret);
-		cout << outputBuffer << endl;
-		Log::error(outputBuffer);
-		promptExit(-1);
-	}
-
-	cudaDeviceProp deviceProp;
-
-#if NVML
-	char driver[NVML_SYSTEM_DRIVER_VERSION_BUFFER_SIZE];
-	nvmlSystemGetDriverVersion(driver, NVML_SYSTEM_DRIVER_VERSION_BUFFER_SIZE);
-#else
-	char driver[] = "???.?? (NVML NOT ENABLED)";
-#endif
-
-	sprintf(outputBuffer, "CUDA Version: %.1f", ((float)version / 1000));
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-	sprintf(outputBuffer, "CUDA Runtime Version: %d", runtimeVersion);
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-	sprintf(outputBuffer, "NVidia Driver Version: %s", driver);
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-	sprintf(outputBuffer, "CUDA Devices: %d", deviceCount);
-	cout << outputBuffer << endl << endl;
-	Log::info(outputBuffer);
-
-	string selectedDeviceName;
-	// Print out information about all available CUDA devices on system
-	for (int count = 0; count < deviceCount; count++)
-	{
-		ret = cudaGetDeviceProperties(&deviceProp, count);
-		if (ret != cudaSuccess)
-		{
-			sprintf(outputBuffer, "An error occurred while getting the CUDA device properties: %d", ret);
-			cerr << outputBuffer << endl;
-			Log::error(outputBuffer);
-		}
-
-		if (count == deviceToUse) {
-			selectedDeviceName = deviceProp.name;
-		}
-
-		sprintf(outputBuffer, "Device #%d (%s):", count, deviceProp.name);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Clock Rate:              %d MHz", (deviceProp.clockRate / 1024));
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Is Integrated:           %s", (deviceProp.integrated == 0 ? "false" : "true"));
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Compute Capability:      %d.%d", deviceProp.major, deviceProp.minor);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Kernel Concurrency:      %d", deviceProp.concurrentKernels);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Max Grid Size:           %d x %d x %d", deviceProp.maxGridSize[0], deviceProp.maxGridSize[1], deviceProp.maxGridSize[2]);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Max Threads per Block:   %d", deviceProp.maxThreadsPerBlock);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Registers per Block:     %d", deviceProp.regsPerBlock);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Registers per SM:        %d", deviceProp.regsPerMultiprocessor);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Processor Count:         %d", deviceProp.multiProcessorCount);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Shared Memory/Block:     %zd", deviceProp.sharedMemPerBlock);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Shared Memory/Proc:      %zd", deviceProp.sharedMemPerMultiprocessor);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-		sprintf(outputBuffer, "    Warp Size:               %d", deviceProp.warpSize);
-		cout << outputBuffer << endl;
-		Log::info(outputBuffer);
-	}
-
-	sprintf(outputBuffer, "Mining on device #%d...", deviceToUse);
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-
-	ret = cudaSetDevice(deviceToUse);
-	if (ret != cudaSuccess)
-	{
-		sprintf(outputBuffer, "CUDA encountered an error while setting the device to %d:%d", deviceToUse, ret);
-		cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-	}
-
-	cudaDeviceReset();
-
-	// Don't have GPU busy-wait on GPU
-	ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
-
-	cudaError_t e = cudaGetLastError();
-	sprintf(outputBuffer, "Last error: %s\n", cudaGetErrorString(e));
-	cout << outputBuffer << endl;
-	Log::info(outputBuffer);
-
-	// Run initialization of device before beginning timer
-	uint64_t* header = getWork(ucpClient, (uint32_t)std::time(0));
-
-	unsigned long long startTime = std::time(0);
-	uint32_t nonceResult[1] = { 0 };
-	uint64_t hashStart[1] = { 0 };
-
-	unsigned long long hashes = 0;
-	cudaError_t cudaStatus;
-
-	uint32_t count = 0;
-
-	int numLines = 0;
-
-	// Mining loop
-	while (true) {
-		vprintf("top of mining loop\n");
-		count++;
-		long timestamp = (long)std::time(0);
-		delete[] header;
-		vprintf("Getting work...\n");
-		header = getWork(ucpClient, timestamp);
-		vprintf("Getting job id...\n");
-		int jobId = ucpClient.getJobId();
-		count++;
-		vprintf("Running kernel...\n");
-		cudaStatus = grindNonces(nonceResult, hashStart, header);
-		vprintf("Kernel finished...\n");
-		if (cudaStatus != cudaSuccess) {
-			cudaError_t e = cudaGetLastError();
-			sprintf(outputBuffer, "Error from running grindNonces: %s\nThis often occurs when a GPU overheats, has an unstable overclock, or has too aggressive launch parameters\nfor the vBlake kernel.\nYou can try using less aggressive settings, like:\n-tpb 256 -bs 256\nAnd try increasing these numbers until you hit instability issues again.", cudaGetErrorString(e));
-			cerr << outputBuffer << endl;
-			Log::error(outputBuffer);
-			promptExit(-1);
-		}
-
-		unsigned long long totalTime = std::time(0) - startTime;
-		hashes += (blocksize * threadsPerBlock * WORK_PER_THREAD);
-
-		double hashSpeed = (double)hashes;
-		hashSpeed /= (totalTime * 1024 * 1024);
-
-		if (count % 10 == 0) {
-			int validShares = ucpClient.getValidShares();
-			int invalidShares = ucpClient.getInvalidShares();
-			int totalAccountedForShares = invalidShares + validShares;
-			int totalSubmittedShares = ucpClient.getSentShares();
-			int unaccountedForShares = totalSubmittedShares - totalAccountedForShares;
-
-			double percentage = ((double)validShares) / totalAccountedForShares;
-			percentage *= 100;
-			// printf("[GPU #%d (%s)] : %f MH/second    valid shares: %d/%d/%d (%.3f%%)\n", deviceToUse, selectedDeviceName.c_str(), hashSpeed, validShares, totalAccountedForShares, totalSubmittedShares, percentage);
-
-			printf("[GPU #%d (%s)] : %0.2f MH/s shares: %d/%d/%d (%.3f%%)\n", deviceToUse, selectedDeviceName.c_str(), hashSpeed, validShares, totalAccountedForShares, totalSubmittedShares, percentage);
-		}
-
-		if (nonceResult[0] != 0x01000000 && nonceResult[0] != 0) {
-			uint32_t nonce = *nonceResult;
-			nonce = (((nonce & 0xFF000000) >> 24) | ((nonce & 0x00FF0000) >> 8) | ((nonce & 0x0000FF00) << 8) | ((nonce & 0x000000FF) << 24));
-
-			ucpClient.submitWork(jobId, timestamp, nonce);
-
-			nonceResult[0] = 0;
-
-			char line[100];
-
-			// Hash coming from GPU is reversed
-			uint64_t hashFlipped = 0;
-			hashFlipped |= (hashStart[0] & 0x00000000000000FF) << 56;
-			hashFlipped |= (hashStart[0] & 0x000000000000FF00) << 40;
-			hashFlipped |= (hashStart[0] & 0x0000000000FF0000) << 24;
-			hashFlipped |= (hashStart[0] & 0x00000000FF000000) << 8;
-			hashFlipped |= (hashStart[0] & 0x000000FF00000000) >> 8;
-			hashFlipped |= (hashStart[0] & 0x0000FF0000000000) >> 24;
-			hashFlipped |= (hashStart[0] & 0x00FF000000000000) >> 40;
-			hashFlipped |= (hashStart[0] & 0xFF00000000000000) >> 56;
-
-#if CPU_SHARES 
-			sprintf(line, "\t Share Found @ 2^24! {%#018llx} [nonce: %#08lx]", hashFlipped, nonce);
-#else
-			sprintf(line, "\t Share Found @ 2^32! {%#018llx} [nonce: %#08lx]", hashFlipped, nonce);
-#endif
-
-			cout << line << endl;
-			vprintf("Logging\n");
-			Log::info(line);
-			vprintf("Done logging\n");
-			vprintf("Made line\n");
-
-			numLines++;
-
-			// Uncomment these lines to get access to this data for display purposes
-			/*
-			long long extraNonce = ucpClient.getStartExtraNonce();
-			int jobId = ucpClient.getJobId();
-			int encodedDifficulty = ucpClient.getEncodedDifficulty();
-			string previousBlockHashHex = ucpClient.getPreviousBlockHash();
-			string merkleRoot = ucpClient.getMerkleRoot();
-			*/
-
-		}
-		vprintf("About to restart loop...\n");
-	}
-
-	printf("Resetting device...\n");
-	cudaStatus = cudaDeviceReset();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceReset failed!");
-		return 1;
-	}
-	printf("Done resetting device...\n");
-
-	getchar();
-	return 0;
-}
 
 uint32_t lastNonceStart = 0;
 
 // Grind Through vBlake nonces with the provided header, setting the resultant nonce and associated hash start if a high-difficulty solution is found
-cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64_t *header)
+cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
+                        uint64_t *header, int deviceToUse, int threadsPerBlock, int blockSize)
 {
 	// Device memory
 	uint32_t *dev_nonceStart = 0;
@@ -12774,7 +12141,7 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	uint64_t *dev_hashStart = 0;
 
 	// Ensure that nonces don't overlap previous work
-	uint32_t nonceStart = (uint64_t)lastNonceStart + (WORK_PER_THREAD * blocksize * threadsPerBlock);
+	uint32_t nonceStart = (uint64_t)lastNonceStart + (WORK_PER_THREAD * blockSize * threadsPerBlock);
 	lastNonceStart = nonceStart;
 
 	cudaError_t cudaStatus;
@@ -12783,11 +12150,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaSetDevice(deviceToUse);
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12796,11 +12163,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMalloc((void**)&dev_nonceStart, 1 * sizeof(uint32_t));
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMalloc failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12809,11 +12176,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMemcpy(dev_nonceStart, &nonceStart, sizeof(uint32_t), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMemcpy failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12822,11 +12189,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMalloc((void**)&dev_nonceResult, 1 * sizeof(uint32_t));
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMalloc failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12835,11 +12202,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMalloc((void**)&dev_hashStart, 1 * sizeof(uint64_t));
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMalloc failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12847,11 +12214,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMalloc((void**)&dev_header, 8 * sizeof(uint64_t));
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMalloc failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12860,23 +12227,23 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMemcpy(dev_header, header, 8 * sizeof(uint64_t), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMalloc failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
 
 	// Launch a kernel on the GPU with one thread for each element.
-	vblakeHasher << < blocksize, threadsPerBlock >> >(dev_nonceStart, dev_nonceResult, dev_hashStart, dev_header);
+	vblakeHasher << < blockSize, threadsPerBlock >> >(dev_nonceStart, dev_nonceResult, dev_hashStart, dev_header);
 
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "grindNonces launch failed: %s\n", cudaGetErrorString(cudaStatus));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12886,7 +12253,7 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaDeviceSynchronize();
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaDeviceSynchronize returned error code %d after launching grindNonces!\n", cudaStatus);
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12895,11 +12262,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMemcpy(nonceResult, dev_nonceResult, 1 * sizeof(uint32_t), cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMemcpy failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}
@@ -12909,11 +12276,11 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64
 	cudaStatus = cudaMemcpy(hashStart, dev_hashStart, 1 * sizeof(uint64_t), cudaMemcpyDeviceToHost);
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMemcpy failed!");
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
 		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		cerr << outputBuffer << endl;
+		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		goto Error;
 	}

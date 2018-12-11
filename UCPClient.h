@@ -708,7 +708,7 @@ private:
 
 				if ((message != nullptr) && (message[0] == '\0'))
 				{					
-					Sleep(1000);
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 				}
 				else
 				{
@@ -836,9 +836,25 @@ private:
 		}
 	}
 public:
-	UCPClient(string, short, string, string);
+        UCPClient(string host, short port, string username, string password) {
+	        storedHost = host;
+                storedPort = port;
+                storedUsername = username;
+                storedPassword = password;
+                boolean result = connectToServer(true);
+                if (!result) {
+                        if (BENCHMARK) {
+                                sprintf(outputBuffer, "Ignoring initial serer connection setup failure as benchmarking mode is enabled...");
+                                cout << outputBuffer << endl;
+                                Log::warn(outputBuffer);
+                        }
+                        else {
+                          promptExit(-1);
+                        }
+                }
+        }
 
-	boolean wasSuccessful() {
+        boolean wasSuccessful() {
 		return successfulConnect;
 	}
 
@@ -1002,21 +1018,3 @@ public:
 		return true;
 	}
 };
-
-UCPClient::UCPClient(string host, short port, string username, string password) {
-	storedHost = host;
-	storedPort = port;
-	storedUsername = username;
-	storedPassword = password;
-	boolean result = connectToServer(true);
-	if (!result) {
-		if (BENCHMARK) {
-			sprintf(outputBuffer, "Ignoring initial serer connection setup failure as benchmarking mode is enabled...");
-			cout << outputBuffer << endl;
-			Log::warn(outputBuffer);
-		}
-		else {
-			promptExit(-1);
-		}
-	}
-}
