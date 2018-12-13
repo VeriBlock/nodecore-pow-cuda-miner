@@ -5,6 +5,7 @@ cc_binary(
     ],
     deps = [
         ":miner",
+        "@abseil-cpp//absl/strings",
     ],
     linkopts = [
         "-pthread",
@@ -25,6 +26,9 @@ cc_library(
         "Log.h",
         "Miner.h",
         "UCPClient.h",
+    ],
+    deps = [
+        "@abseil-cpp//absl/strings",
     ],
 )
 

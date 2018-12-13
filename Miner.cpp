@@ -7,6 +7,10 @@
 
 #include "Miner.h"
 
+#include <thread>
+
+#include "absl/strings/str_join.h"
+
 #include "Log.h"
 
 #if NVML
@@ -65,18 +69,158 @@ uint64_t* getWork(UCPClient& ucpClient, uint32_t timestamp) {
   return header;
 }
 
-void startMining(UCPClient& ucpClient, int deviceToUse, int threadsPerBlock,
-                 int blockSize) {
-  byte target[24];
-  ucpClient.copyMiningTarget(target);
+void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
+                 int threadsPerBlock, int blockSize) {
+  int ret = cudaSetDevice(deviceIndex);
+  if (ret != cudaSuccess) {
+    sprintf(outputBuffer,
+            "CUDA encountered an error while setting the device to %d:%d",
+            deviceIndex, ret);
+    std::cerr << outputBuffer << std::endl;
+    Log::error(outputBuffer);
+  }
 
-  // No effect if NVML is not enabled.
-  readyNVML(deviceToUse);
+  cudaDeviceReset();
 
-  sprintf(outputBuffer, "Using Device: %d\n\n", deviceToUse);
+  // Don't have GPU busy-wait on GPU
+  ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+
+  cudaError_t e = cudaGetLastError();
+  sprintf(outputBuffer, "[GPU #%d] : Last error: %s", deviceIndex, cudaGetErrorString(e));
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
 
+  // Run initialization of device before beginning timer
+  uint64_t* header = getWork(ucpClient, (uint32_t)time(0));
+
+  unsigned long long startTime = time(0);
+  uint32_t nonceResult[1] = {0};
+  uint64_t hashStart[1] = {0};
+
+  unsigned long long hashes = 0;
+  cudaError_t cudaStatus;
+
+  uint32_t count = 0;
+
+  int numLines = 0;
+
+  // Mining loop
+  while (true) {
+    vprintf("top of mining loop\n");
+    count++;
+    long timestamp = (long)time(0);
+    delete[] header;
+    vprintf("Getting work...\n");
+    header = getWork(ucpClient, timestamp);
+    vprintf("Getting job id...\n");
+    int jobId = ucpClient.getJobId();
+    count++;
+    vprintf("Running kernel...\n");
+    cudaStatus = grindNonces(nonceResult, hashStart, header, deviceIndex,
+                             threadsPerBlock, blockSize);
+    vprintf("Kernel finished...\n");
+    if (cudaStatus != cudaSuccess) {
+      cudaError_t e = cudaGetLastError();
+      sprintf(
+          outputBuffer,
+          "Error from running grindNonces: %s\nThis often occurs when a GPU "
+          "overheats, has an unstable overclock, or has too aggressive launch "
+          "parameters\nfor the vBlake kernel.\nYou can try using less "
+          "aggressive settings, like:\n-tpb 256 -bs 256\nAnd try increasing "
+          "these numbers until you hit instability issues again.",
+          cudaGetErrorString(e));
+      std::cerr << outputBuffer << std::endl;
+      Log::error(outputBuffer);
+      promptExit(-1);
+    }
+
+    unsigned long long totalTime = time(0) - startTime;
+    hashes += (blockSize * threadsPerBlock * WORK_PER_THREAD);
+
+    double hashSpeed = (double)hashes;
+    hashSpeed /= (totalTime * 1024 * 1024);
+
+    if (count % 10 == 0) {
+      int validShares = ucpClient.getValidShares();
+      int invalidShares = ucpClient.getInvalidShares();
+      int totalAccountedForShares = invalidShares + validShares;
+      int totalSubmittedShares = ucpClient.getSentShares();
+      int unaccountedForShares = totalSubmittedShares - totalAccountedForShares;
+
+      double percentage = ((double)validShares) / totalAccountedForShares;
+      percentage *= 100;
+      // printf("[GPU #%d (%s)] : %f MH/second    valid shares: %d/%d/%d
+      // (%.3f%%)\n", deviceIndex, deviceName.c_str(), hashSpeed,
+      // validShares, totalAccountedForShares, totalSubmittedShares,
+      // percentage);
+
+      printf("[GPU #%d (%s)] : %0.2f MH/s shares: %d/%d/%d (%.3f%%)\n",
+             deviceIndex, deviceName.c_str(), hashSpeed, validShares,
+             totalAccountedForShares, totalSubmittedShares, percentage);
+    }
+
+    if (nonceResult[0] != 0x01000000 && nonceResult[0] != 0) {
+      uint32_t nonce = *nonceResult;
+      nonce = (((nonce & 0xFF000000) >> 24) | ((nonce & 0x00FF0000) >> 8) |
+               ((nonce & 0x0000FF00) << 8) | ((nonce & 0x000000FF) << 24));
+
+      ucpClient.submitWork(jobId, timestamp, nonce);
+
+      nonceResult[0] = 0;
+
+      char line[100];
+
+      // Hash coming from GPU is reversed
+      uint64_t hashFlipped = 0;
+      hashFlipped |= (hashStart[0] & 0x00000000000000FF) << 56;
+      hashFlipped |= (hashStart[0] & 0x000000000000FF00) << 40;
+      hashFlipped |= (hashStart[0] & 0x0000000000FF0000) << 24;
+      hashFlipped |= (hashStart[0] & 0x00000000FF000000) << 8;
+      hashFlipped |= (hashStart[0] & 0x000000FF00000000) >> 8;
+      hashFlipped |= (hashStart[0] & 0x0000FF0000000000) >> 24;
+      hashFlipped |= (hashStart[0] & 0x00FF000000000000) >> 40;
+      hashFlipped |= (hashStart[0] & 0xFF00000000000000) >> 56;
+
+#if CPU_SHARES
+      sprintf(line, "\tShare Found @ 2^24! {%#018llx} [nonce: %#08lx]",
+              hashFlipped, nonce);
+#else
+      sprintf(line, "\tShare Found @ 2^32 by GPU #%d! {%#018llx} [nonce: %#08lx]",
+              deviceIndex, hashFlipped, nonce);
+#endif
+
+      std::cout << line << std::endl;
+      vprintf("Logging\n");
+      Log::info(line);
+      vprintf("Done logging\n");
+      vprintf("Made line\n");
+
+      numLines++;
+
+      // Uncomment these lines to get access to this data for display purposes
+      /*
+      long long extraNonce = ucpClient.getStartExtraNonce();
+      int jobId = ucpClient.getJobId();
+      int encodedDifficulty = ucpClient.getEncodedDifficulty();
+      string previousBlockHashHex = ucpClient.getPreviousBlockHash();
+      string merkleRoot = ucpClient.getMerkleRoot();
+      */
+    }
+    vprintf("About to restart loop...\n");
+  }
+
+  printf("Resetting device...\n");
+  cudaStatus = cudaDeviceReset();
+  if (cudaStatus != cudaSuccess) {
+    fprintf(stderr, "cudaDeviceReset failed!");
+  }
+  printf("Done resetting device...\n");
+
+  getchar();
+}
+
+void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
+                 int threadsPerBlock, int blockSize) {
   int version, ret;
   ret = cudaDriverGetVersion(&version);
   if (ret != cudaSuccess) {
@@ -126,10 +270,9 @@ void startMining(UCPClient& ucpClient, int deviceToUse, int threadsPerBlock,
   std::cout << outputBuffer << std::endl << std::endl;
   Log::info(outputBuffer);
 
-  string selectedDeviceName;
-  // Print out information about all available CUDA devices on system
-  for (int count = 0; count < deviceCount; count++) {
-    ret = cudaGetDeviceProperties(&deviceProp, count);
+  std::vector<std::thread> minerThreads;
+  for (int deviceIndex = 0; deviceIndex < deviceCount; deviceIndex++) {
+    ret = cudaGetDeviceProperties(&deviceProp, deviceIndex);
     if (ret != cudaSuccess) {
       sprintf(outputBuffer,
               "An error occurred while getting the CUDA device properties: %d",
@@ -138,11 +281,7 @@ void startMining(UCPClient& ucpClient, int deviceToUse, int threadsPerBlock,
       Log::error(outputBuffer);
     }
 
-    if (count == deviceToUse) {
-      selectedDeviceName = deviceProp.name;
-    }
-
-    sprintf(outputBuffer, "Device #%d (%s):", count, deviceProp.name);
+    sprintf(outputBuffer, "Device #%d (%s):", deviceIndex, deviceProp.name);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
     sprintf(outputBuffer, "    Clock Rate:              %d MHz",
@@ -194,156 +333,25 @@ void startMining(UCPClient& ucpClient, int deviceToUse, int threadsPerBlock,
             deviceProp.warpSize);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
+
+    if (deviceList.count(deviceIndex) == 0) {
+      continue;
+    }
+
+    // No effect if NVML is not enabled.
+    readyNVML(deviceIndex);
+
+    minerThreads.push_back(std::thread(&minerWorker, std::ref(ucpClient),
+                                       deviceIndex, deviceProp.name,
+                                       threadsPerBlock, blockSize));
   }
 
-  sprintf(outputBuffer, "Mining on device #%d...", deviceToUse);
+  sprintf(outputBuffer, "Mining on Device%s: %s\n", deviceList.size() > 1 ? "s" : "",
+          absl::StrJoin(deviceList, ",").c_str());
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
 
-  ret = cudaSetDevice(deviceToUse);
-  if (ret != cudaSuccess) {
-    sprintf(outputBuffer,
-            "CUDA encountered an error while setting the device to %d:%d",
-            deviceToUse, ret);
-    std::cerr << outputBuffer << std::endl;
-    Log::error(outputBuffer);
+  for (std::thread& t : minerThreads) {
+    t.join();
   }
-
-  cudaDeviceReset();
-
-  // Don't have GPU busy-wait on GPU
-  ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
-
-  cudaError_t e = cudaGetLastError();
-  sprintf(outputBuffer, "Last error: %s\n", cudaGetErrorString(e));
-  std::cout << outputBuffer << std::endl;
-  Log::info(outputBuffer);
-
-  // Run initialization of device before beginning timer
-  uint64_t* header = getWork(ucpClient, (uint32_t)time(0));
-
-  unsigned long long startTime = time(0);
-  uint32_t nonceResult[1] = {0};
-  uint64_t hashStart[1] = {0};
-
-  unsigned long long hashes = 0;
-  cudaError_t cudaStatus;
-
-  uint32_t count = 0;
-
-  int numLines = 0;
-
-  // Mining loop
-  while (true) {
-    vprintf("top of mining loop\n");
-    count++;
-    long timestamp = (long)time(0);
-    delete[] header;
-    vprintf("Getting work...\n");
-    header = getWork(ucpClient, timestamp);
-    vprintf("Getting job id...\n");
-    int jobId = ucpClient.getJobId();
-    count++;
-    vprintf("Running kernel...\n");
-    cudaStatus = grindNonces(nonceResult, hashStart, header, deviceToUse,
-                             threadsPerBlock, blockSize);
-    vprintf("Kernel finished...\n");
-    if (cudaStatus != cudaSuccess) {
-      cudaError_t e = cudaGetLastError();
-      sprintf(
-          outputBuffer,
-          "Error from running grindNonces: %s\nThis often occurs when a GPU "
-          "overheats, has an unstable overclock, or has too aggressive launch "
-          "parameters\nfor the vBlake kernel.\nYou can try using less "
-          "aggressive settings, like:\n-tpb 256 -bs 256\nAnd try increasing "
-          "these numbers until you hit instability issues again.",
-          cudaGetErrorString(e));
-      std::cerr << outputBuffer << std::endl;
-      Log::error(outputBuffer);
-      promptExit(-1);
-    }
-
-    unsigned long long totalTime = time(0) - startTime;
-    hashes += (blockSize * threadsPerBlock * WORK_PER_THREAD);
-
-    double hashSpeed = (double)hashes;
-    hashSpeed /= (totalTime * 1024 * 1024);
-
-    if (count % 10 == 0) {
-      int validShares = ucpClient.getValidShares();
-      int invalidShares = ucpClient.getInvalidShares();
-      int totalAccountedForShares = invalidShares + validShares;
-      int totalSubmittedShares = ucpClient.getSentShares();
-      int unaccountedForShares = totalSubmittedShares - totalAccountedForShares;
-
-      double percentage = ((double)validShares) / totalAccountedForShares;
-      percentage *= 100;
-      // printf("[GPU #%d (%s)] : %f MH/second    valid shares: %d/%d/%d
-      // (%.3f%%)\n", deviceToUse, selectedDeviceName.c_str(), hashSpeed,
-      // validShares, totalAccountedForShares, totalSubmittedShares,
-      // percentage);
-
-      printf("[GPU #%d (%s)] : %0.2f MH/s shares: %d/%d/%d (%.3f%%)\n",
-             deviceToUse, selectedDeviceName.c_str(), hashSpeed, validShares,
-             totalAccountedForShares, totalSubmittedShares, percentage);
-    }
-
-    if (nonceResult[0] != 0x01000000 && nonceResult[0] != 0) {
-      uint32_t nonce = *nonceResult;
-      nonce = (((nonce & 0xFF000000) >> 24) | ((nonce & 0x00FF0000) >> 8) |
-               ((nonce & 0x0000FF00) << 8) | ((nonce & 0x000000FF) << 24));
-
-      ucpClient.submitWork(jobId, timestamp, nonce);
-
-      nonceResult[0] = 0;
-
-      char line[100];
-
-      // Hash coming from GPU is reversed
-      uint64_t hashFlipped = 0;
-      hashFlipped |= (hashStart[0] & 0x00000000000000FF) << 56;
-      hashFlipped |= (hashStart[0] & 0x000000000000FF00) << 40;
-      hashFlipped |= (hashStart[0] & 0x0000000000FF0000) << 24;
-      hashFlipped |= (hashStart[0] & 0x00000000FF000000) << 8;
-      hashFlipped |= (hashStart[0] & 0x000000FF00000000) >> 8;
-      hashFlipped |= (hashStart[0] & 0x0000FF0000000000) >> 24;
-      hashFlipped |= (hashStart[0] & 0x00FF000000000000) >> 40;
-      hashFlipped |= (hashStart[0] & 0xFF00000000000000) >> 56;
-
-#if CPU_SHARES
-      sprintf(line, "\t Share Found @ 2^24! {%#018llx} [nonce: %#08lx]",
-              hashFlipped, nonce);
-#else
-      sprintf(line, "\t Share Found @ 2^32! {%#018llx} [nonce: %#08lx]",
-              hashFlipped, nonce);
-#endif
-
-      std::cout << line << std::endl;
-      vprintf("Logging\n");
-      Log::info(line);
-      vprintf("Done logging\n");
-      vprintf("Made line\n");
-
-      numLines++;
-
-      // Uncomment these lines to get access to this data for display purposes
-      /*
-      long long extraNonce = ucpClient.getStartExtraNonce();
-      int jobId = ucpClient.getJobId();
-      int encodedDifficulty = ucpClient.getEncodedDifficulty();
-      string previousBlockHashHex = ucpClient.getPreviousBlockHash();
-      string merkleRoot = ucpClient.getMerkleRoot();
-      */
-    }
-    vprintf("About to restart loop...\n");
-  }
-
-  printf("Resetting device...\n");
-  cudaStatus = cudaDeviceReset();
-  if (cudaStatus != cudaSuccess) {
-    fprintf(stderr, "cudaDeviceReset failed!");
-  }
-  printf("Done resetting device...\n");
-
-  getchar();
 }

@@ -7,16 +7,20 @@
 
 #include <cstring>
 #include <iostream>
+#include <set>
 #include <string>
 #include <thread>
 
 #ifdef _WIN32
-#include <VersionHelpers.h>
 #include <Windows.h>
+#include <VersionHelpers.h>
 #elif __linux__
-#include <netdb.h>
 #include <sys/socket.h>
+#include <netdb.h>
 #endif
+
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 
 #include "Constants.h"
 #include "Log.h"
@@ -114,8 +118,8 @@ void printHelpAndExit() {
       "-p <password>              The miner/worker password to use on the "
       "pool\n");
   printf(
-      "-d <deviceNum>             The ordinal of the device to use (default "
-      "0)\n");
+      "-d <deviceList>            Comma-separated list of device numbers to "
+      "use (default all).\n");
   printf(
       "-tpb <threadPerBlock>      The threads per block to use with the Blake "
       "kernel (default %d)\n",
@@ -157,20 +161,24 @@ int main(int argc, char* argv[]) {
   string username = "";     // "VGX71bcRsEh4HZzhbA9Nj7GQNH5jGw";
   string password = "";
 
-  int deviceToUse = 0;
   int threadsPerBlock = DEFAULT_THREADS_PER_BLOCK;
   int blockSize = DEFAULT_BLOCK_SIZE;
-
+  std::set<int> deviceList;
   if (argc > 1) {
     for (int i = 1; i < argc; i += 2) {
       char* argument = argv[i];
       printf("%s\n", argument);
       if (argument[0] == '-' && argument[1] == 'd') {
-        if (strlen(argv[i + 1]) == 2) {
-          // device num >= 10
-          deviceToUse = (argv[i + 1][0] - 48) * 10 + (argv[i + 1][1] - 48);
-        } else {
-          deviceToUse = argv[i + 1][0] - 48;
+        std::string arg(argv[i + 1]);
+        std::set<std::string> devices = absl::StrSplit(arg, ',');
+        for (const string& d : devices) {
+          int i;
+          if (!absl::SimpleAtoi(d, &i)) {
+            sprintf(outputBuffer, "Invalid GPU index: %s\n", d.c_str());
+            std::cerr << outputBuffer << std::endl;
+            exit(1);
+          }
+          deviceList.insert(i);
         }
       } else if (!strcmp(argument, "-o")) {
         hostAndPort = string(argv[i + 1]);
@@ -299,7 +307,7 @@ int main(int argc, char* argv[]) {
   Log::info(outputBuffer);
 
   UCPClient ucpClient(host, port, username, password);
-  startMining(ucpClient, deviceToUse, threadsPerBlock, blockSize);
+  startMining(ucpClient, deviceList, threadsPerBlock, blockSize);
 
   return 0;
 }

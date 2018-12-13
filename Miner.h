@@ -7,12 +7,14 @@
 
 #pragma once
 
-#include "UCPClient.h"
-#include "cuda_runtime.h"
+#include <set>
 
-extern cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart,
-                               const uint64_t *header, int deviceToUse,
+#include "cuda_runtime.h"
+#include "UCPClient.h"
+
+extern cudaError_t grindNonces(uint32_t* nonceResult, uint64_t* hashStart,
+                               const uint64_t* header, int deviceIndex,
                                int threadsPerBlock, int blockSize);
 
-void startMining(UCPClient &ucpClient, int deviceToUse, int threadsPerBlock,
-                 int blockSize);
+void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
+                 int threadsPerBlock, int blockSize);

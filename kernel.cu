@@ -12132,7 +12132,7 @@ uint32_t lastNonceStart = 0;
 
 // Grind Through vBlake nonces with the provided header, setting the resultant nonce and associated hash start if a high-difficulty solution is found
 cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
-                        uint64_t *header, int deviceToUse, int threadsPerBlock, int blockSize)
+                        uint64_t *header, int deviceIndex, int threadsPerBlock, int blockSize)
 {
 	// Device memory
 	uint32_t *dev_nonceStart = 0;
@@ -12145,20 +12145,6 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
 	lastNonceStart = nonceStart;
 
 	cudaError_t cudaStatus;
-
-	// Select GPU to run on
-	cudaStatus = cudaSetDevice(deviceToUse);
-	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		cudaError_t e = cudaGetLastError();
-		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		goto Error;
-	}
-
 	// Allocate GPU buffers for nonce result and header
 	cudaStatus = cudaMalloc((void**)&dev_nonceStart, 1 * sizeof(uint32_t));
 	if (cudaStatus != cudaSuccess) {
