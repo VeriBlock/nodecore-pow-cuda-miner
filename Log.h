@@ -2,22 +2,29 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 #include <fstream>
+#include <chrono>
+#include <cstring>
+#include <iostream>
+#include <string>
+
 #ifdef _WIN32
 #include <Windows.h>
 #elif __linux__
 #define boolean bool
 #define byte uint8_t
 #endif
-#include <chrono>
-#include <iostream>
-#include <string>
 
 #define LOG_FILE "cuda-miner.log"
 
 using namespace std;
 
+// TODO(mks): Rework logging.
+extern bool verboseOutput;
+extern char outputBuffer[8192];
+extern void vprintf(char* toprint);
+extern void promptExit(int exitCode);
+
 class Log {
- private:
  public:
   static inline bool& log() {
     static bool opt = true;
