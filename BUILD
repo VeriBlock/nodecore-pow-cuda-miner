@@ -1,16 +1,15 @@
 cc_binary(
-    name = "nodecore-pow-cuda",
+    name = "nodecore-pow-cuda-miner",
     srcs = [
         "main.cpp",
     ],
     deps = [
         ":miner",
         "@abseil-cpp//absl/strings",
+        "@cuda_local//:cuda",
     ],
     linkopts = [
         "-pthread",
-        "-lcuda",
-        "-lcudart",
     ],
 )
 
