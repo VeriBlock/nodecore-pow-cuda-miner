@@ -6,7 +6,9 @@ cc_binary(
     deps = [
         ":miner",
         "@abseil-cpp//absl/strings",
-        "@cuda_local//:cuda",
+    ],
+    copts = [
+        "-Iexternal/cuda_local/include",
     ],
     linkopts = [
         "-pthread",
@@ -26,8 +28,12 @@ cc_library(
         "Miner.h",
         "UCPClient.h",
     ],
+    copts = [
+        "-Iexternal/cuda_local/include",
+    ],
     deps = [
         "@abseil-cpp//absl/strings",
+        "@cuda_local//:cuda",
     ],
 )
 
@@ -37,13 +43,14 @@ genrule(
         "kernel.cu",
         "Constants.h",
         "Log.h",
+        "@cuda_local//:cuda",
     ],
     outs = ["kernel.o"],
     cmd = "nvcc -gencode=arch=compute_50,code=\\\"sm_50,compute_50\\\"" +
           " -gencode=arch=compute_52,code=\\\"sm_52,compute_52\\\" " +
           " -gencode=arch=compute_61,code=\\\"sm_61,compute_61\\\" " +
           " -gencode=arch=compute_70,code=\\\"sm_70,compute_70\\\" " +
-          " -I. -O3 -Xcompiler -Wall  -D_FORCE_INLINES  --ptxas-options=\"-v\"" +
-          " --compiler-options=\"-fPIC\"" +
+          " -O3 -Xcompiler -Wall  -D_FORCE_INLINES  --ptxas-options=\"-v\"" +
+          " --compiler-options=\"-fPIC\",\"-Iexternal/cuda_local/include\"" +
           " --maxrregcount=64 -c $(location :kernel.cu) -o $@"
 )
