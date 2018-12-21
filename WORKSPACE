@@ -7,7 +7,13 @@ git_repository(
 )
 
 new_local_repository(
-    name = "cuda_local",
+    name = "cuda_local_linux",
     path = "/usr/local/cuda-9.2",
+    build_file = "BUILD.cuda-local",
+)
+
+new_local_repository(
+    name = "cuda_local_windows",
+    path = "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v9.2",
     build_file = "BUILD.cuda-local",
 )
