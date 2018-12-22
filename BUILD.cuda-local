@@ -1,11 +1,16 @@
-cc_library(
+cc_import(
     name = "cuda",
     hdrs = glob([
         "include/**/*.h",
         "include/**/*.hpp",
     ]),
-    srcs = [
-        "lib64/libcudart.so",
-    ],
+    interface_library = select({
+        "@bazel_tools//src/conditions:linux_x86_64": None,
+        "@bazel_tools//src/conditions:windows": "lib/x64/cudart.lib",
+    }),
+    shared_library = select({
+        "@bazel_tools//src/conditions:linux_x86_64": "lib64/libcudart.so",
+        "@bazel_tools//src/conditions:windows": "bin/cudart64_92.dll",
+    }),
     visibility = ["//visibility:public"],
 )

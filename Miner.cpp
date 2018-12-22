@@ -334,7 +334,7 @@ void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
 
-    if (deviceList.count(deviceIndex) == 0) {
+    if (!deviceList.empty() && deviceList.count(deviceIndex) == 0) {
       continue;
     }
 
