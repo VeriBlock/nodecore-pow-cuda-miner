@@ -93,12 +93,33 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   // Run initialization of device before beginning timer
   uint64_t* header = getWork(ucpClient, (uint32_t)time(0));
 
+  cudaError_t cudaStatus;
+  // Device memory
+  uint32_t *dev_nonceStart = 0;
+  uint64_t *dev_header = 0;
+  uint32_t *dev_nonceResult = 0;
+  uint64_t *dev_hashStart = 0;
+
+  // Allocate GPU buffers for nonce result and header
+  cudaStatus = cudaMalloc((void**)&dev_nonceStart, 1 * sizeof(uint32_t));
+  cudaStatus = cudaMalloc((void**)&dev_header, 8 * sizeof(uint64_t));
+  cudaStatus = cudaMalloc((void**)&dev_nonceResult, 1 * sizeof(uint32_t));
+  cudaStatus = cudaMalloc((void**)&dev_hashStart, 1 * sizeof(uint64_t));
+  if (cudaStatus != cudaSuccess) {
+    sprintf(outputBuffer, "cudaMalloc failed!");
+    std::cerr << outputBuffer << endl;
+    Log::error(outputBuffer);
+    cudaError_t e = cudaGetLastError();
+    sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
+    std::cerr << outputBuffer << endl;
+    Log::error(outputBuffer);
+  }
+
   unsigned long long startTime = time(0);
   uint32_t nonceResult[1] = {0};
   uint64_t hashStart[1] = {0};
 
   unsigned long long hashes = 0;
-  cudaError_t cudaStatus;
 
   uint32_t count = 0;
 
@@ -116,7 +137,8 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
     int jobId = ucpClient.getJobId();
     count++;
     vprintf("Running kernel...\n");
-    cudaStatus = grindNonces(nonceResult, hashStart, header, deviceIndex,
+    cudaStatus = grindNonces(dev_nonceStart, dev_header, dev_nonceResult, dev_hashStart,
+                             nonceResult, hashStart, header, deviceIndex,
                              threadsPerBlock, blockSize);
     vprintf("Kernel finished...\n");
     if (cudaStatus != cudaSuccess) {
@@ -210,6 +232,10 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   }
 
   printf("Resetting device...\n");
+  cudaFree(dev_nonceStart);
+  cudaFree(dev_header);
+  cudaFree(dev_nonceResult);
+  cudaFree(dev_hashStart);
   cudaStatus = cudaDeviceReset();
   if (cudaStatus != cudaSuccess) {
     fprintf(stderr, "cudaDeviceReset failed!");
