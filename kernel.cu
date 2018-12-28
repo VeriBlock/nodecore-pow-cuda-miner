@@ -12169,8 +12169,9 @@ cudaError_t grindNonces(uint32_t *dev_nonceStart, uint64_t* dev_header, uint32_t
 		goto Error;
 	}
 
-	// Zero out hash result
+	// Zero out hash and nonce result
 	cudaStatus = cudaMemset(dev_hashStart, 0, 1 * sizeof(uint64_t));
+	cudaStatus = cudaMemset(dev_nonceResult, 0, 1 * sizeof(uint32_t));
 	if (cudaStatus != cudaSuccess) {
 		sprintf(outputBuffer, "cudaMemset failed!");
 		std::cerr << outputBuffer << endl;
