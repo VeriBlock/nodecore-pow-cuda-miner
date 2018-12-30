@@ -30,7 +30,9 @@ uint32_t *blockHeadermobj = nullptr;
 uint32_t *midStatemobj = nullptr;
 uint32_t *nonceOutmobj = nullptr;
 
-cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const uint64_t *header);
+cudaError_t grindNonces(uint32_t *dev_nonceStart, uint64_t* dev_header, uint32_t* dev_nonceResult,
+                        uint64_t* dev_hashStart, uint32_t *nonceResult, uint64_t *hashStart, const
+                        uint64_t *header, int deviceIndex, int threadsPerBlock, int blockSize);
 
 __device__ __forceinline__
 uint64_t vBlake(const uint64_t h0, const uint64_t h1, const uint64_t h2, const uint64_t h3, const uint64_t h4, const uint64_t h5, const uint64_t h6, const uint64_t h7)
@@ -12131,32 +12133,15 @@ __global__ void vblakeHasher(uint32_t *nonceStart, uint32_t *nonceOut, uint64_t 
 uint32_t lastNonceStart = 0;
 
 // Grind Through vBlake nonces with the provided header, setting the resultant nonce and associated hash start if a high-difficulty solution is found
-cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
+cudaError_t grindNonces(uint32_t *dev_nonceStart, uint64_t* dev_header, uint32_t* dev_nonceResult,
+                        uint64_t* dev_hashStart, uint32_t *nonceResult, uint64_t *hashStart, const
                         uint64_t *header, int deviceIndex, int threadsPerBlock, int blockSize)
 {
-	// Device memory
-	uint32_t *dev_nonceStart = 0;
-	uint64_t *dev_header = 0;
-	uint32_t *dev_nonceResult = 0;
-	uint64_t *dev_hashStart = 0;
-
 	// Ensure that nonces don't overlap previous work
 	uint32_t nonceStart = (uint64_t)lastNonceStart + (WORK_PER_THREAD * blockSize * threadsPerBlock);
 	lastNonceStart = nonceStart;
 
 	cudaError_t cudaStatus;
-	// Allocate GPU buffers for nonce result and header
-	cudaStatus = cudaMalloc((void**)&dev_nonceStart, 1 * sizeof(uint32_t));
-	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaMalloc failed!");
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		cudaError_t e = cudaGetLastError();
-		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		goto Error;
-	}
 
 	// Copy starting nonce to GPU
 	cudaStatus = cudaMemcpy(dev_nonceStart, &nonceStart, sizeof(uint32_t), cudaMemcpyHostToDevice);
@@ -12171,48 +12156,24 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
 		goto Error;
 	}
 
-	// Allocate GPU buffers for nonce result and header.
-	cudaStatus = cudaMalloc((void**)&dev_nonceResult, 1 * sizeof(uint32_t));
-	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaMalloc failed!");
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		cudaError_t e = cudaGetLastError();
-		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		goto Error;
-	}
-
-	// Allocate GPU buffers for nonce result and header.
-	cudaStatus = cudaMalloc((void**)&dev_hashStart, 1 * sizeof(uint64_t));
-	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaMalloc failed!");
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		cudaError_t e = cudaGetLastError();
-		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		goto Error;
-	}
-
-	cudaStatus = cudaMalloc((void**)&dev_header, 8 * sizeof(uint64_t));
-	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaMalloc failed!");
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		cudaError_t e = cudaGetLastError();
-		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
-		std::cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		goto Error;
-	}
-
 	// Copy input vectors from host memory to GPU buffers.
 	cudaStatus = cudaMemcpy(dev_header, header, 8 * sizeof(uint64_t), cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
-		sprintf(outputBuffer, "cudaMalloc failed!");
+		sprintf(outputBuffer, "cudaMemcpy failed!");
+		std::cerr << outputBuffer << endl;
+		Log::error(outputBuffer);
+		cudaError_t e = cudaGetLastError();
+		sprintf(outputBuffer, "Cuda Error: %s\n", cudaGetErrorString(e));
+		std::cerr << outputBuffer << endl;
+		Log::error(outputBuffer);
+		goto Error;
+	}
+
+	// Zero out hash and nonce result
+	cudaStatus = cudaMemset(dev_hashStart, 0, 1 * sizeof(uint64_t));
+	cudaStatus = cudaMemset(dev_nonceResult, 0, 1 * sizeof(uint32_t));
+	if (cudaStatus != cudaSuccess) {
+		sprintf(outputBuffer, "cudaMemset failed!");
 		std::cerr << outputBuffer << endl;
 		Log::error(outputBuffer);
 		cudaError_t e = cudaGetLastError();
@@ -12272,9 +12233,5 @@ cudaError_t grindNonces(uint32_t *nonceResult, uint64_t *hashStart, const
 	}
 
 Error:
-	cudaFree(dev_nonceStart);
-	cudaFree(dev_header);
-	cudaFree(dev_nonceResult);
-	cudaFree(dev_hashStart);
 	return cudaStatus;
 }
