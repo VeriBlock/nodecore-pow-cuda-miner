@@ -86,7 +86,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
 
   cudaError_t e = cudaGetLastError();
-  sprintf(outputBuffer, "[GPU #%d] : Last error: %s", deviceIndex, cudaGetErrorString(e));
+  sprintf(outputBuffer, "[GPU #%d] : Last error: %s\n", deviceIndex, cudaGetErrorString(e));
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
 
@@ -116,6 +116,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   }
 
   unsigned long long startTime = time(0);
+  unsigned long long lastKnownDowntime = 0;
   uint32_t nonceResult[1] = {0};
   uint64_t hashStart[1] = {0};
 
@@ -154,6 +155,12 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
       std::cerr << outputBuffer << std::endl;
       Log::error(outputBuffer);
       promptExit(-1);
+    }
+	
+    if (lastKnownDowntime < ucpClient.getLastDowntime()) {
+	  lastKnownDowntime = ucpClient.getLastDowntime();
+	  hashes = 0;
+	  startTime = time(0) - 1;
     }
 
     unsigned long long totalTime = time(0) - startTime;
@@ -245,7 +252,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   getchar();
 }
 
-void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
+void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
                  int threadsPerBlock, int blockSize) {
   int version, ret;
   ret = cudaDriverGetVersion(&version);
@@ -296,6 +303,17 @@ void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
   std::cout << outputBuffer << std::endl << std::endl;
   Log::info(outputBuffer);
 
+  if (deviceList.size() == 0) {
+    sprintf(outputBuffer, "No Devices specified, mining on all %d CUDA devices...",
+            deviceCount);
+    std::cout << outputBuffer << std::endl;
+    Log::info(outputBuffer);
+	
+	for (int device = 0; device < deviceCount; device++) {
+		deviceList.insert(device);
+	}
+  }
+  
   std::vector<std::thread> minerThreads;
   for (int deviceIndex = 0; deviceIndex < deviceCount; deviceIndex++) {
     ret = cudaGetDeviceProperties(&deviceProp, deviceIndex);
@@ -377,7 +395,14 @@ void startMining(UCPClient& ucpClient, const std::set<int>& deviceList,
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
 
+if (minerThreads.size() != 0) {
   for (std::thread& t : minerThreads) {
     t.join();
+  }
+} else {
+  sprintf(outputBuffer, "No valid devices were listed! Available CUDA devices: %d!", deviceCount);
+  std::cout << outputBuffer << std::endl;
+  Log::info(outputBuffer);
+  exit(-1);
   }
 }

@@ -12,6 +12,7 @@
 #include <thread>
 
 #ifdef _WIN32
+#define _WINSOCKAPI_
 #include <Windows.h>
 #include <VersionHelpers.h>
 #elif __linux__
@@ -142,6 +143,7 @@ void printHelpAndExit() {
 }
 
 int main(int argc, char* argv[]) {
+  try {
   // Check for help argument (only -h)
   for (int i = 1; i < argc; i++) {
     char* argument = argv[i];
@@ -305,9 +307,15 @@ int main(int argc, char* argv[]) {
       host.c_str(), port, username.c_str(), password.c_str());
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
-
-  UCPClient ucpClient(host, port, username, password);
-  startMining(ucpClient, deviceList, threadsPerBlock, blockSize);
-
+  
+  try {
+    UCPClient ucpClient(host, port, username, password);
+    startMining(ucpClient, deviceList, threadsPerBlock, blockSize);
+  } catch(std::exception& e) {
+      std::cout << "exception: " << e.what() << std::endl;
+    }
+  } catch(std::exception& e) {
+    std::cout << "exception: " << e.what() << std::endl;
+}
   return 0;
 }
