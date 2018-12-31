@@ -72,10 +72,6 @@ class UCPClient {
   int lastAcknowledgement = 0;
   boolean successfulConnect = false;
   boolean workAvailable = false;
-  boolean reconnecting = false;
-  boolean wasDown = false;
-  
-  unsigned long long lastDowntime = 0;
 
   byte headerToHash[VERIBLOCK_BLOCK_HEADER_SIZE];
   unsigned int jobId = 0xFFFFFFFF;
@@ -267,24 +263,20 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      if (!reconnecting) {
-		sprintf(outputBuffer,
-		      "Reading from socket during setup resulted in an error %d",
-		      WSAGetLastError());
-		cerr << outputBuffer << endl;
-		Log::error(outputBuffer);
-		closesocket(ucpServerSocket);
-		WSACleanup();
-	  }
+      sprintf(outputBuffer,
+              "Reading from socket during setup resulted in an error %d",
+              WSAGetLastError());
+      cerr << outputBuffer << endl;
+      Log::error(outputBuffer);
+      closesocket(ucpServerSocket);
+      WSACleanup();
 #else
-	if (!reconnecting) {
-        sprintf(outputBuffer,
+      sprintf(outputBuffer,
               "Reading from socket during setup resulted in an error %d",
               success);
-        cerr << outputBuffer << endl;
-        Log::error(outputBuffer);
-        close(ucpServerSocket);
-	}
+      cerr << outputBuffer << endl;
+      Log::error(outputBuffer);
+      close(ucpServerSocket);
 #endif
       return false;
     }
@@ -466,8 +458,8 @@ class UCPClient {
           WSAGetLastError());
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
-      // closesocket(ucpServerSocket);
-      // WSACleanup(); // TODO: delete these?
+      closesocket(ucpServerSocket);
+      WSACleanup();
 #else
       sprintf(
           outputBuffer,
@@ -760,7 +752,6 @@ class UCPClient {
     char message[MESSAGE_BUFFER_SIZE];
     char extraMessage[MESSAGE_BUFFER_SIZE];
     for (;;) {
-	  // cout << "Cyclic run, our socket is " << ucpServerSocket << "..." << endl;
       fillNull(message, MESSAGE_BUFFER_SIZE);
       fillNull(extraMessage, MESSAGE_BUFFER_SIZE);
       long success = recv(ucpServerSocket, message, sizeof(message),
@@ -781,7 +772,6 @@ class UCPClient {
             "additional packets...");
       }
 
-      int check1Count = 0;
       while ((!check1)) {
         try {
           long result = recv(ucpServerSocket, message + cursor, 1,
@@ -792,16 +782,9 @@ class UCPClient {
 #endif
           );
         } catch (char* e) {
-			cout << "Exception..." << endl;
           // ex
         }
-		
-		check1Count++;
-		
-		if (check1Count > 5) {
-			break;
-		}
-		
+
         cursor++;
 
         if ((message != nullptr) && (message[0] == '\0')) {
@@ -816,37 +799,24 @@ class UCPClient {
 
       if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-        if (!reconnecting) {
-          sprintf(outputBuffer,
+        sprintf(outputBuffer,
                 "Reading from socket during normal operations resulted in an "
-                "error %d, this could be the result of incorrect credentials or an interrupted pool connection.",
+                "error %d, are the server credentials correct?",
                 WSAGetLastError());
-          cerr << outputBuffer << endl;
-          Log::error(outputBuffer);
-		  
-		  closesocket(ucpServerSocket);
-	      WSACleanup();
-		  reconnecting = true;
-		  bool success = reconnect();
-		  while (!success) {
-		    cout << "Attempting to reconnect to server..." << endl;
-		    success = reconnect();
-		  }
-		  reconnecting = false;
-		  lastDowntime = time(0);
-			
-		} 
+        cerr << outputBuffer << endl;
+        Log::error(outputBuffer);
+        closesocket(ucpServerSocket);
+        WSACleanup();
 #else
-	    if (!reconnecting) {
-          sprintf(outputBuffer,
+        sprintf(outputBuffer,
                 "Reading from socket during normal operations resulted in an "
-                "error %d, this could be the result of incorrect credentials or an interrupted pool connection.",
+                "error %d, are the server credentials correct?",
                 errno);
-          cerr << outputBuffer << endl;
-          Log::error(outputBuffer);
-		}
+        cerr << outputBuffer << endl;
+        Log::error(outputBuffer);
+        close(ucpServerSocket);
 #endif
-		continue;
+        return;
       }
 
       ServerCommand commandType = getCommandType(message);
@@ -1017,10 +987,6 @@ class UCPClient {
   }
 
   boolean hasWorkReady() { return workAvailable; }
-  
-  unsigned long long getLastDowntime() {
-	  return lastDowntime;
-  }
 
   void start() {
     runThread = thread([this] { this->cyclicRun(); });
@@ -1034,21 +1000,14 @@ class UCPClient {
 
   void submitWork(unsigned int jobId, unsigned int timestamp,
                   unsigned int nonce) {
-	if (reconnecting) {
-      sprintf(outputBuffer, "In process of reconnecting, work submission blocked...");
-      cout << outputBuffer << endl;
-      Log::info(outputBuffer);
-	  while (reconnecting) {
-          this_thread::sleep_for(std::chrono::milliseconds(100));
-	  }
-	}
     string miningSubmit = getMiningSubmitString(jobId, timestamp, nonce) + "\n";
     long success = send(ucpServerSocket, miningSubmit.c_str(),
                         (int)strlen(miningSubmit.c_str()), 0);
+
     sentShares++;
 
     if (lastAcknowledgement + 5 < sentShares) {
-      sprintf(outputBuffer, "Pool server appears unresponsive! Exiting..."); // Todo: attempt reconnect here too
+      sprintf(outputBuffer, "Pool server appears unresponsive! Exiting...");
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
 #ifdef _WIN32
@@ -1079,14 +1038,7 @@ class UCPClient {
       Log::error(outputBuffer);
       close(ucpServerSocket);
 #endif
-      reconnecting = true;
-	  bool success = reconnect();
-	  while (!success) {
-		  cout << "Attempting to reconnect to server..." << endl;
-		  success = reconnect();
-	  }
-	  reconnecting = false;
-	  lastDowntime = time(0);
+      promptExit(-1);
       return;
     }
   }
@@ -1139,11 +1091,9 @@ class UCPClient {
         UCPClient::setupLoginAndSubscribe(storedUsername, storedPassword);
 
     if (!successfulStart) {
-	  if (!reconnecting) {
-        sprintf(outputBuffer, "Initial server connection and setup failed!");
-        cerr << outputBuffer << endl;
-        Log::error(outputBuffer);
-	  }
+      sprintf(outputBuffer, "Initial server connection and setup failed!");
+      cerr << outputBuffer << endl;
+      Log::error(outputBuffer);
       successfulConnect = false;
       return false;
     } else {
