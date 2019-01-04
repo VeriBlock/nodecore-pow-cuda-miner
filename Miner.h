@@ -18,3 +18,5 @@ extern cudaError_t grindNonces(uint32_t *dev_nonceStart, uint64_t* dev_header, u
 
 void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
                  int threadsPerBlock, int blockSize);
+
+string strJoin(const std::set<int>& elements, const char* const separator);
