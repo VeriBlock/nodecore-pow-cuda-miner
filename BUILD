@@ -3,6 +3,9 @@ cc_binary(
     srcs = [
         "main.cpp",
     ],
+    deps = [
+        ":miner",
+    ],
     copts = [
         "-Iexternal/cuda_local/include",
     ],
@@ -26,6 +29,9 @@ cc_library(
     ],
     copts = [
         "-Iexternal/cuda_local/include",
+    ],
+    deps = [
+        "@cuda_local//:cuda",
     ],
 )
 
