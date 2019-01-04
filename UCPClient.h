@@ -850,7 +850,7 @@ class UCPClient {
 		} 
 #else
 	    if (!reconnecting) {
-          snprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof outputBuffer,
                 "Reading from socket during normal operations resulted in an "
                 "error %d, this could be the result of incorrect credentials or an interrupted pool connection.",
                 errno);
@@ -860,6 +860,27 @@ class UCPClient {
 #endif
 		continue;
       }
+	  
+	  #ifdef _WIN32
+      // Nothing
+      #else
+        if (strlen(message) == 0) {
+          snprintf(outputBuffer, sizeof outputBuffer, "\033[1;31mServer sent a 0-length message (or reading from socket failed), attempting to reconnect...\033[0m");
+          cerr << outputBuffer << endl;
+          Log::error(outputBuffer);
+          close(ucpServerSocket);
+          reconnecting = true;
+          bool success = reconnect();
+            while (!success) {
+              snprintf(outputBuffer, sizeof outputBuffer, "\033[1;33mAttempting to reconnect to server...\033[0m");
+              cerr << outputBuffer << endl;
+              Log::error(outputBuffer);
+              success = reconnect();
+            }
+            reconnecting = false;
+            lastDowntime = time(0); 
+        }
+      #endif
 
       ServerCommand commandType = getCommandType(message);
 
@@ -1088,7 +1109,7 @@ class UCPClient {
       closesocket(ucpServerSocket);
       WSACleanup();
 #else
-      snprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof outputBuffer,
               "Sending mining submit / share submission string failed with "
               "error %d",
               errno);
