@@ -75,7 +75,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
                  int threadsPerBlock, int blockSize) {
   int ret = cudaSetDevice(deviceIndex);
   if (ret != cudaSuccess) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "CUDA encountered an error while setting the device to %d:%d",
             deviceIndex, ret);
     std::cerr << outputBuffer << std::endl;
@@ -88,7 +88,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   ret = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
 
   cudaError_t e = cudaGetLastError();
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "[GPU #%d] : Last error: %s\n",
+  snprintf(outputBuffer, sizeof(outputBuffer), "[GPU #%d] : Last error: %s\n",
           deviceIndex, cudaGetErrorString(e));
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
@@ -110,11 +110,11 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
   cudaStatus = cudaMalloc((void**)&dev_hashStart, 1 * sizeof(uint64_t));
 
   if (cudaStatus != cudaSuccess) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "cudaMalloc failed!");
+    snprintf(outputBuffer, sizeof(outputBuffer), "cudaMalloc failed!");
     std::cerr << outputBuffer << endl;
     Log::error(outputBuffer);
     cudaError_t e = cudaGetLastError();
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Cuda Error: %s\n",
+    snprintf(outputBuffer, sizeof(outputBuffer), "Cuda Error: %s\n",
             cudaGetErrorString(e));
     std::cerr << outputBuffer << endl;
     Log::error(outputBuffer);
@@ -149,7 +149,7 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
     vprintf("Kernel finished...\n");
     if (cudaStatus != cudaSuccess) {
       cudaError_t e = cudaGetLastError();
-      sprintf_s(
+      snprintf(
           outputBuffer, sizeof(outputBuffer),
           "Error from running grindNonces: %s\nThis often occurs when a GPU "
           "overheats, has an unstable overclock, or has too aggressive launch "
@@ -216,11 +216,11 @@ void minerWorker(UCPClient& ucpClient, int deviceIndex, std::string deviceName,
       hashFlipped |= (hashStart[0] & 0xFF00000000000000) >> 56;
 
 #if CPU_SHARES
-      sprintf_s(line, sizeof(line),
+      snprintf(line, sizeof(line),
                 "\tShare Found @ 2^24! {%#018llx} [nonce: %#08lx]",
               hashFlipped, nonce);
 #else
-      sprintf_s(line, sizeof(line),
+      snprintf(line, sizeof(line),
                 "\tShare Found @ 2^32 by GPU #%d! {%#018llx} [nonce: %#08lx]",
               deviceIndex, hashFlipped, nonce);
 #endif
@@ -264,7 +264,7 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   int version, ret;
   ret = cudaDriverGetVersion(&version);
   if (ret != cudaSuccess) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "Error when getting CUDA driver version: %d", ret);
     std::cout << outputBuffer << std::endl;
     Log::error(outputBuffer);
@@ -274,7 +274,7 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   int runtimeVersion;
   ret = cudaRuntimeGetVersion(&runtimeVersion);
   if (ret != cudaSuccess) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "Error when getting CUDA runtime version: %d", ret);
     std::cout << outputBuffer << std::endl;
     Log::error(outputBuffer);
@@ -284,7 +284,7 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   int deviceCount;
   ret = cudaGetDeviceCount(&deviceCount);
   if (ret != cudaSuccess) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "Error when getting CUDA device count: %d", ret);
     std::cout << outputBuffer << std::endl;
     Log::error(outputBuffer);
@@ -300,24 +300,24 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   char driver[] = "???.?? (NVML NOT ENABLED)";
 #endif
 
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "CUDA Version: %.1f",
+  snprintf(outputBuffer, sizeof(outputBuffer), "CUDA Version: %.1f",
             ((float)version / 1000));
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "CUDA Runtime Version: %d",
+  snprintf(outputBuffer, sizeof(outputBuffer), "CUDA Runtime Version: %d",
             runtimeVersion);
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "NVidia Driver Version: %s",
+  snprintf(outputBuffer, sizeof(outputBuffer), "NVidia Driver Version: %s",
             driver);
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "CUDA Devices: %d", deviceCount);
+  snprintf(outputBuffer, sizeof(outputBuffer), "CUDA Devices: %d", deviceCount);
   std::cout << outputBuffer << std::endl << std::endl;
   Log::info(outputBuffer);
 
   if (deviceList.size() == 0) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "No Devices specified, mining on all %d CUDA devices...",
             deviceCount);
     std::cout << outputBuffer << std::endl;
@@ -332,73 +332,74 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   for (int deviceIndex = 0; deviceIndex < deviceCount; deviceIndex++) {
     ret = cudaGetDeviceProperties(&deviceProp, deviceIndex);
     if (ret != cudaSuccess) {
-      sprintf_s(outputBuffer, sizeof(outputBuffer),
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "An error occurred while getting the CUDA device properties: %d",
               ret);
       std::cerr << outputBuffer << std::endl;
       Log::error(outputBuffer);
     }
 
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Device #%d (%s):", deviceIndex,
+    snprintf(outputBuffer, sizeof(outputBuffer), "Device #%d (%s):", deviceIndex,
             deviceProp.name);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "    Clock Rate:              %d MHz",
             (deviceProp.clockRate / 1024));
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, "    Is Integrated:           %s",
+    snprintf(outputBuffer, sizeof outputBuffer,
+             "    Is Integrated:           %s",
             (deviceProp.integrated == 0 ? "false" : "true"));
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Compute Capability:      %d.%d",
             deviceProp.major, deviceProp.minor);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "    Kernel Concurrency:      %d",
             deviceProp.concurrentKernels);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Max Grid Size:           %d x %d x %d",
             deviceProp.maxGridSize[0], deviceProp.maxGridSize[1],
             deviceProp.maxGridSize[2]);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "    Max Threads per Block:   %d",
             deviceProp.maxThreadsPerBlock);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Registers per Block:     %d",
             deviceProp.regsPerBlock);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Registers per SM:        %d",
             deviceProp.regsPerMultiprocessor);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "    Processor Count:         %d",
             deviceProp.multiProcessorCount);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Shared Memory/Block:     %zd",
             deviceProp.sharedMemPerBlock);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
             "    Shared Memory/Proc:      %zd",
             deviceProp.sharedMemPerMultiprocessor);
     std::cout << outputBuffer << std::endl;
     Log::info(outputBuffer);
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "    Warp Size:               %d",
             deviceProp.warpSize);
     std::cout << outputBuffer << std::endl;
@@ -416,7 +417,7 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
                                        threadsPerBlock, blockSize));
   }
 
-  sprintf_s(outputBuffer, sizeof(outputBuffer), "Mining on Device%s: %s\n",
+  snprintf(outputBuffer, sizeof(outputBuffer), "Mining on Device%s: %s\n",
             deviceList.size() > 1 ? "s" : "", strJoin(deviceList, ",").c_str());
 
   std::cout << outputBuffer << std::endl;
@@ -427,7 +428,7 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
 		t.join();
 	  }
 	} else {
-	  sprintf_s(outputBuffer, sizeof(outputBuffer),
+	  snprintf(outputBuffer, sizeof(outputBuffer),
 				"No valid devices were listed! Available CUDA devices: %d!",
 				deviceCount);
 	  std::cout << outputBuffer << std::endl;

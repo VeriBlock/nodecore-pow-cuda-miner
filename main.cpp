@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (argc % 2 != 1) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer),
+    snprintf(outputBuffer, sizeof(outputBuffer),
               "GPU miner must be provided valid argument pairs!");
     std::cerr << outputBuffer << std::endl;
     printHelpAndExit();
@@ -213,41 +213,41 @@ int main(int argc, char* argv[]) {
   }
 
   if (HIGH_RESOURCE) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Resource Utilization: HIGH");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Resource Utilization: HIGH");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Resource Utilization: LOW");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Resource Utilization: LOW");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (NVML) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "NVML Status: ENABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "NVML Status: ENABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "NVML Status: DISABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "NVML Status: DISABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (CPU_SHARES) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Share Type: CPU");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Share Type: CPU");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Share Type: GPU");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Share Type: GPU");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (BENCHMARK) {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: ENABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: ENABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf_s(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: DISABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: DISABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
@@ -295,7 +295,7 @@ int main(int argc, char* argv[]) {
 
   int port = std::stoi(portString);
 
-  sprintf_s(
+  snprintf(
       outputBuffer, sizeof(outputBuffer),
       "Attempting to mine to pool %s:%d with username %s and password %s...",
       host.c_str(), port, username.c_str(), password.c_str());
