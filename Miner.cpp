@@ -422,18 +422,18 @@ void startMining(UCPClient& ucpClient, std::set<int>& deviceList,
   std::cout << outputBuffer << std::endl;
   Log::info(outputBuffer);
 
-if (minerThreads.size() != 0) {
-  for (std::thread& t : minerThreads) {
-    t.join();
-  }
-} else {
-  sprintf_s(outputBuffer, sizeof(outputBuffer),
-            "No valid devices were listed! Available CUDA devices: %d!",
-            deviceCount);
-  std::cout << outputBuffer << std::endl;
-  Log::info(outputBuffer);
-  exit(-1);
-  }
+	if (minerThreads.size() != 0) {
+	  for (std::thread& t : minerThreads) {
+		t.join();
+	  }
+	} else {
+	  sprintf_s(outputBuffer, sizeof(outputBuffer),
+				"No valid devices were listed! Available CUDA devices: %d!",
+				deviceCount);
+	  std::cout << outputBuffer << std::endl;
+	  Log::info(outputBuffer);
+	  exit(-1);
+	}
 }
 
 string strJoin(const std::set<int> &elements,
@@ -447,6 +447,6 @@ string strJoin(const std::set<int> &elements,
 			std::ostringstream os;
 			std::copy(elements.begin(), elements.end(),
 					std::ostream_iterator<int>(os, separator));
-		    return os.str().erase(elements.size()- 1);
+		    return os.str().erase(elements.size()*2 - 1);
 	}
 }
