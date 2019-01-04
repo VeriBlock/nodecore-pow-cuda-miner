@@ -5,7 +5,6 @@ cc_binary(
     ],
     deps = [
         ":miner",
-        "@abseil-cpp//absl/strings",
     ],
     copts = [
         "-Iexternal/cuda_local/include",
@@ -32,7 +31,6 @@ cc_library(
         "-Iexternal/cuda_local/include",
     ],
     deps = [
-        "@abseil-cpp//absl/strings",
         "@cuda_local//:cuda",
     ],
 )

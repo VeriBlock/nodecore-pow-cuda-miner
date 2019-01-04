@@ -11,22 +11,14 @@
 #include <string>
 #include <thread>
 
+#include "Miner.h"
+
 #ifdef _WIN32
-#define _WINSOCKAPI_
-#include <Windows.h>
 #include <VersionHelpers.h>
 #elif __linux__
 #include <sys/socket.h>
 #include <netdb.h>
 #endif
-
-#include "absl/strings/numbers.h"
-#include "absl/strings/str_split.h"
-
-#include "Constants.h"
-#include "Log.h"
-#include "Miner.h"
-#include "UCPClient.h"
 
 // TODO(mks): Rework logging.
 bool verboseOutput = false;
@@ -154,7 +146,8 @@ int main(int argc, char* argv[]) {
   }
 
   if (argc % 2 != 1) {
-    sprintf(outputBuffer, "GPU miner must be provided valid argument pairs!");
+    snprintf(outputBuffer, sizeof(outputBuffer),
+              "GPU miner must be provided valid argument pairs!");
     std::cerr << outputBuffer << std::endl;
     printHelpAndExit();
   }
@@ -166,22 +159,23 @@ int main(int argc, char* argv[]) {
   int threadsPerBlock = DEFAULT_THREADS_PER_BLOCK;
   int blockSize = DEFAULT_BLOCK_SIZE;
   std::set<int> deviceList;
+
   if (argc > 1) {
     for (int i = 1; i < argc; i += 2) {
       char* argument = argv[i];
       printf("%s\n", argument);
       if (argument[0] == '-' && argument[1] == 'd') {
-        std::string arg(argv[i + 1]);
-        std::set<std::string> devices = absl::StrSplit(arg, ',');
-        for (const string& d : devices) {
-          int i;
-          if (!absl::SimpleAtoi(d, &i)) {
-            sprintf(outputBuffer, "Invalid GPU index: %s\n", d.c_str());
-            std::cerr << outputBuffer << std::endl;
-            exit(1);
-          }
-          deviceList.insert(i);
+
+        char* pch = strtok(argv[i + 1], ",");
+
+        while (pch != NULL) {
+          int device = atoi(pch);
+    	  std::cout << device << "\n";
+		  deviceList.insert(device);
+
+          pch = strtok(NULL, ",");
         }
+
       } else if (!strcmp(argument, "-o")) {
         hostAndPort = string(argv[i + 1]);
       } else if (!strcmp(argument, "-u")) {
@@ -219,41 +213,41 @@ int main(int argc, char* argv[]) {
   }
 
   if (HIGH_RESOURCE) {
-    sprintf(outputBuffer, "Resource Utilization: HIGH");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Resource Utilization: HIGH");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf(outputBuffer, "Resource Utilization: LOW");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Resource Utilization: LOW");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (NVML) {
-    sprintf(outputBuffer, "NVML Status: ENABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "NVML Status: ENABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf(outputBuffer, "NVML Status: DISABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "NVML Status: DISABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (CPU_SHARES) {
-    sprintf(outputBuffer, "Share Type: CPU");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Share Type: CPU");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf(outputBuffer, "Share Type: GPU");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Share Type: GPU");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
 
   if (BENCHMARK) {
-    sprintf(outputBuffer, "Benchmark Mode: ENABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: ENABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   } else {
-    sprintf(outputBuffer, "Benchmark Mode: DISABLED");
+    snprintf(outputBuffer, sizeof(outputBuffer), "Benchmark Mode: DISABLED");
     std::cerr << outputBuffer << std::endl;
     Log::info(outputBuffer);
   }
@@ -301,8 +295,8 @@ int main(int argc, char* argv[]) {
 
   int port = std::stoi(portString);
 
-  sprintf(
-      outputBuffer,
+  snprintf(
+      outputBuffer, sizeof(outputBuffer),
       "Attempting to mine to pool %s:%d with username %s and password %s...",
       host.c_str(), port, username.c_str(), password.c_str());
   std::cout << outputBuffer << std::endl;

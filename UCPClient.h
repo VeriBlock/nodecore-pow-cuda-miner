@@ -9,6 +9,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 #ifdef _WIN32
+#define _WINSOCKAPI_
 #include <WS2tcpip.h>
 #include <WinSock2.h>
 #include <Windows.h>
@@ -29,6 +30,9 @@
 #include <thread>
 #include "Constants.h"
 #include "Log.h"
+
+#undef min
+#undef max
 #include "picojson.h"
 
 #define SCK_VERSION2 0x0202
@@ -202,8 +206,8 @@ class UCPClient {
     string err = picojson::parse(jsonMaster, line);
 
     if (!err.empty()) {
-      sprintf(
-          outputBuffer,
+      snprintf(
+          outputBuffer, sizeof(outputBuffer),
           "An error has been encountered while reading a command! Command: %s",
           line.c_str());
       cout << outputBuffer << endl;
@@ -212,7 +216,7 @@ class UCPClient {
     }
 
     if (!jsonMaster.is<picojson::object>()) {
-      sprintf(outputBuffer, "Top-level line %s is not a JSON object!",
+      snprintf(outputBuffer, 2048, "Top-level line %s is not a JSON object!",
               line.c_str());
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
@@ -268,7 +272,7 @@ class UCPClient {
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
       if (!reconnecting) {
-		sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
 		      "Reading from socket during setup resulted in an error %d",
 		      WSAGetLastError());
 		cerr << outputBuffer << endl;
@@ -278,7 +282,7 @@ class UCPClient {
 	  }
 #else
 	if (!reconnecting) {
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
               "Reading from socket during setup resulted in an error %d",
               success);
         cerr << outputBuffer << endl;
@@ -290,7 +294,7 @@ class UCPClient {
     }
 
     if (getCommandType(message) != Capabilities) {
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Server did not send its capabilities at the beginning of the "
               "setup process! Instead, it sent the command: %s",
               message);
@@ -302,7 +306,7 @@ class UCPClient {
     picojson::value capabilitiesCommand;
     string err = picojson::parse(capabilitiesCommand, message);
     if (!err.empty()) {
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "An error has occurred while attempting to read the server "
               "capabilities: %s",
               err.c_str());
@@ -312,7 +316,7 @@ class UCPClient {
     }
 
     if (!capabilitiesCommand.is<picojson::object>()) {
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Provided JSON (%s) does not contain a top-level JSON-object!",
               message);
       cerr << outputBuffer << endl;
@@ -350,7 +354,7 @@ class UCPClient {
 
         if (MINING_AUTH != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support MINING_AUTH according "
                   "to its bitflag (%s)",
                   bitflag.c_str());
@@ -360,7 +364,7 @@ class UCPClient {
 
         if (MINING_SUBSCRIBE != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support MINING_SUBSCRIBE "
                   "according to its bitflag (%s)",
                   bitflag.c_str());
@@ -370,7 +374,7 @@ class UCPClient {
 
         if (MINING_SUBMIT != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support MINING_SUBMIT "
                   "according to its bitflag (%s)",
                   bitflag.c_str());
@@ -380,7 +384,7 @@ class UCPClient {
 
         if (MINING_UNSUBSCRIBE != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support MINING_UNSUBSCRIBE "
                   "according to its bitflag (%s)",
                   bitflag.c_str());
@@ -390,7 +394,7 @@ class UCPClient {
 
         if (MINING_RESET_ACK != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support MINING_RESET_ACK "
                   "according to its bitflag (%s)",
                   bitflag.c_str());
@@ -400,7 +404,7 @@ class UCPClient {
 
         if (MINING_MEMPOOL_UPDATE_ACK != '1') {
           capabilitiesCorrect = false;
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server does not support "
                   "MINING_MEMPOOL_UPDATE_ACK according to its bitflag (%s)",
                   bitflag.c_str());
@@ -409,7 +413,7 @@ class UCPClient {
         }
 
         if (capabilitiesCorrect) {
-          sprintf(outputBuffer,
+          snprintf(outputBuffer, sizeof(outputBuffer),
                   "The specified server supports all necessary commands "
                   "(bitflag: %s)",
                   bitflag.c_str());
@@ -419,7 +423,7 @@ class UCPClient {
           return false;
         }
       } else {
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
                 "The server did not send a valid capabilities command!");
         cerr << outputBuffer << endl;
         Log::error(outputBuffer);
@@ -433,7 +437,7 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Sending authentication string failed with error %d",
               WSAGetLastError());
       cerr << outputBuffer << endl;
@@ -441,7 +445,7 @@ class UCPClient {
       closesocket(ucpServerSocket);
       WSACleanup();
 #else
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Sending authentication string failed with error %d", errno);
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
@@ -460,8 +464,8 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      sprintf(
-          outputBuffer,
+      snprintf(
+          outputBuffer, sizeof(outputBuffer),
           "Reading from socket during authentication resulted in an error %d",
           WSAGetLastError());
       cerr << outputBuffer << endl;
@@ -469,8 +473,8 @@ class UCPClient {
       // closesocket(ucpServerSocket);
       // WSACleanup(); // TODO: delete these?
 #else
-      sprintf(
-          outputBuffer,
+      snprintf(
+          outputBuffer, sizeof(outputBuffer),
           "Reading from socket during authentication resulted in an error %d",
           errno);
       cerr << outputBuffer << endl;
@@ -481,14 +485,14 @@ class UCPClient {
     }
 
     if (getCommandType(message) == MiningAuthSuccess) {
-      sprintf(outputBuffer, "Successfully authenticated to server!");
+      snprintf(outputBuffer, sizeof(outputBuffer), "Successfully authenticated to server!");
       cout << outputBuffer << endl;
       Log::info(outputBuffer);
     } else {
       picojson::value authenticationResponseCommand;
       string err = picojson::parse(authenticationResponseCommand, message);
       if (!err.empty()) {
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
                 "An error has occurred while attempting to read the server "
                 "authentication response: %s",
                 err.c_str());
@@ -498,7 +502,8 @@ class UCPClient {
       }
 
       if (!authenticationResponseCommand.is<picojson::object>()) {
-        sprintf(outputBuffer,
+        snprintf(
+            outputBuffer, sizeof(outputBuffer),
                 "Provided JSON (%s) does not contain a top-level JSON-object!",
                 err.c_str());
         cerr << outputBuffer << endl;
@@ -516,13 +521,14 @@ class UCPClient {
           authenticationResponseCommandObj.end()) {
         picojson::value reasonValue = authenticationResponseIter->second;
         string reason = reasonValue.to_str();
-        sprintf(outputBuffer, "Unable to authenticate to the server: %s",
+        snprintf(outputBuffer, sizeof(outputBuffer),
+                  "Unable to authenticate to the server: %s",
                 reason.c_str());
         cerr << outputBuffer << endl;
         Log::error(outputBuffer);
         return false;
       } else {
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
                 "The server did not send a valid mining authentication "
                 "response command!");
         cerr << outputBuffer << endl;
@@ -537,14 +543,16 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      sprintf(outputBuffer, "Sending subscription string failed with error %d",
+      snprintf(outputBuffer, sizeof(outputBuffer),
+                "Sending subscription string failed with error %d",
               WSAGetLastError());
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
       closesocket(ucpServerSocket);
       WSACleanup();
 #else
-      sprintf(outputBuffer, "Sending subscription string failed with error %d",
+      snprintf(outputBuffer, sizeof(outputBuffer),
+                "Sending subscription string failed with error %d",
               errno);
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
@@ -563,7 +571,7 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Reading from socket during subscription resulted in an error %d",
               WSAGetLastError());
       cerr << outputBuffer << endl;
@@ -571,7 +579,7 @@ class UCPClient {
       closesocket(ucpServerSocket);
       WSACleanup();
 #else
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof(outputBuffer),
               "Reading from socket during subscription resulted in an error %d",
               errno);
       cerr << outputBuffer << endl;
@@ -582,15 +590,14 @@ class UCPClient {
     }
 
     if (getCommandType(message) == MiningSubscribeSuccess) {
-      sprintf(outputBuffer, "Successfully subscribed to server!");
+      snprintf(outputBuffer, sizeof(outputBuffer), "Successfully subscribed to server!");
       cout << outputBuffer << endl;
       Log::info(outputBuffer);
     } else {
       picojson::value subscriptionResponseCommand;
       string err = picojson::parse(subscriptionResponseCommand, message);
       if (!err.empty()) {
-        sprintf(
-            outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
             "Reading from socket during subscription resulted in an error %s",
             err.c_str());
         cerr << outputBuffer << endl;
@@ -599,7 +606,7 @@ class UCPClient {
       }
 
       if (!subscriptionResponseCommand.is<picojson::object>()) {
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof(outputBuffer),
                 "Provided JSON (%s) does not contain a top-level JSON-object!",
                 message);
         cerr << outputBuffer << endl;
@@ -616,13 +623,14 @@ class UCPClient {
       if (subscriptionResponseIter != subscriptionResponseCommandObj.end()) {
         picojson::value reasonValue = subscriptionResponseIter->second;
         string reason = reasonValue.to_str();
-        sprintf(outputBuffer, "Unable to subscribe to server: %s",
+        snprintf(outputBuffer, sizeof(outputBuffer), "Unable to subscribe to server: %s",
                 reason.c_str());
         cerr << outputBuffer << endl;
         Log::error(outputBuffer);
         return false;
       } else {
-        sprintf(outputBuffer,
+        snprintf(
+            outputBuffer, sizeof(outputBuffer),
                 "The server did not send a valid mining subscription response "
                 "command!");
         cerr << outputBuffer << endl;
@@ -638,7 +646,8 @@ class UCPClient {
     picojson::value command;
     string err = picojson::parse(command, JSON);
     if (!err.empty()) {
-      sprintf(outputBuffer,
+      snprintf(outputBuffer,
+               sizeof outputBuffer,
               "An error has occurred while attempting to read the server "
               "response: %s",
               err.c_str());
@@ -648,7 +657,7 @@ class UCPClient {
     }
 
     if (!command.is<picojson::object>()) {
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof outputBuffer,
               "Provided JSON (%s) does not contain a top-level JSON-object!",
               JSON.c_str());
       cerr << outputBuffer << endl;
@@ -672,7 +681,8 @@ class UCPClient {
         picojson::value jobIdValue = jobIdInternalIter->second;
         return jobIdValue;
       } else {
-        sprintf(outputBuffer, "The JSON blob (%s) does not contain an id %s!",
+        snprintf(outputBuffer, sizeof outputBuffer,
+                 "The JSON blob (%s) does not contain an id %s!",
                 JSON.c_str(), id.c_str());
         cerr << outputBuffer << endl;
         Log::error(outputBuffer);
@@ -680,7 +690,8 @@ class UCPClient {
                                ") does not contain an id " + id + "!");
       }
     } else {
-      sprintf(outputBuffer, "The JSON blob (%s) does not contain an id %s!",
+      snprintf(outputBuffer, sizeof outputBuffer,
+               "The JSON blob (%s) does not contain an id %s!",
               JSON.c_str(), id.c_str());
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
@@ -817,7 +828,8 @@ class UCPClient {
       if (success == SOCKET_ERROR) {
 #ifdef _WIN32
         if (!reconnecting) {
-          sprintf(outputBuffer,
+          snprintf(
+              outputBuffer, sizeof outputBuffer,
                 "Reading from socket during normal operations resulted in an "
                 "error %d, this could be the result of incorrect credentials or an interrupted pool connection.",
                 WSAGetLastError());
@@ -838,7 +850,7 @@ class UCPClient {
 		} 
 #else
 	    if (!reconnecting) {
-          sprintf(outputBuffer,
+          snprintf(outputBuffer,
                 "Reading from socket during normal operations resulted in an "
                 "error %d, this could be the result of incorrect credentials or an interrupted pool connection.",
                 errno);
@@ -963,7 +975,7 @@ class UCPClient {
       } else if (commandType == MiningSubmitFailure) {
         invalidShares++;
         string failureReason = getDataStringFromJSONById(message, "reason");
-        sprintf(outputBuffer,
+        snprintf(outputBuffer, sizeof outputBuffer,
                 "Submitting a share failed for the following reason: %s",
                 failureReason.c_str());
         cerr << outputBuffer << endl;
@@ -984,8 +996,8 @@ class UCPClient {
     boolean result = connectToServer(true);
     if (!result) {
       if (BENCHMARK) {
-        sprintf(
-            outputBuffer,
+        snprintf(
+            outputBuffer, sizeof outputBuffer,
             "Ignoring initial serer connection setup failure as benchmarking "
             "mode is enabled...");
         cout << outputBuffer << endl;
@@ -1035,7 +1047,8 @@ class UCPClient {
   void submitWork(unsigned int jobId, unsigned int timestamp,
                   unsigned int nonce) {
 	if (reconnecting) {
-      sprintf(outputBuffer, "In process of reconnecting, work submission blocked...");
+      snprintf(outputBuffer, sizeof outputBuffer,
+               "In process of reconnecting, work submission blocked...");
       cout << outputBuffer << endl;
       Log::info(outputBuffer);
 	  while (reconnecting) {
@@ -1048,7 +1061,11 @@ class UCPClient {
     sentShares++;
 
     if (lastAcknowledgement + 5 < sentShares) {
-      sprintf(outputBuffer, "Pool server appears unresponsive! Exiting..."); // Todo: attempt reconnect here too
+      snprintf(
+          outputBuffer, sizeof outputBuffer,
+          "Pool server appears unresponsive! Exiting...");  // Todo: attempt
+                                                            // reconnect here
+                                                            // too
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
 #ifdef _WIN32
@@ -1062,7 +1079,7 @@ class UCPClient {
 
     if (success == SOCKET_ERROR) {
 #ifdef _WIN32
-      sprintf(outputBuffer,
+      snprintf(outputBuffer, sizeof outputBuffer,
               "Sending mining submit / share submission string failed with "
               "error %d",
               WSAGetLastError());
@@ -1071,7 +1088,7 @@ class UCPClient {
       closesocket(ucpServerSocket);
       WSACleanup();
 #else
-      sprintf(outputBuffer,
+      snprintf(outputBuffer,
               "Sending mining submit / share submission string failed with "
               "error %d",
               errno);
@@ -1113,7 +1130,8 @@ class UCPClient {
     successfulStartup = WSAStartup(DLLVersion, &WinSockData);
 
     if (!(successfulStartup == 0)) {
-      sprintf(outputBuffer, "Unable to correctly perform WSAStartup!");
+      snprintf(outputBuffer, sizeof outputBuffer,
+               "Unable to correctly perform WSAStartup!");
       cerr << outputBuffer << endl;
       Log::error(outputBuffer);
       return false;
@@ -1140,7 +1158,8 @@ class UCPClient {
 
     if (!successfulStart) {
 	  if (!reconnecting) {
-        sprintf(outputBuffer, "Initial server connection and setup failed!");
+        snprintf(outputBuffer, sizeof outputBuffer,
+                 "Initial server connection and setup failed!");
         cerr << outputBuffer << endl;
         Log::error(outputBuffer);
 	  }
