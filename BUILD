@@ -3,10 +3,6 @@ cc_binary(
     srcs = [
         "main.cpp",
     ],
-    deps = [
-        ":miner",
-        "@abseil-cpp//absl/strings",
-    ],
     copts = [
         "-Iexternal/cuda_local/include",
     ],
@@ -30,10 +26,6 @@ cc_library(
     ],
     copts = [
         "-Iexternal/cuda_local/include",
-    ],
-    deps = [
-        "@abseil-cpp//absl/strings",
-        "@cuda_local//:cuda",
     ],
 )
 
