@@ -78,7 +78,7 @@ class UCPClient {
   boolean workAvailable = false;
   boolean reconnecting = false;
   boolean wasDown = false;
-  
+
   unsigned long long lastDowntime = 0;
 
   byte headerToHash[VERIBLOCK_BLOCK_HEADER_SIZE];
@@ -794,32 +794,32 @@ class UCPClient {
 
       int check1Count = 0;
       while ((!check1)) {
-        try {
-          long result = recv(ucpServerSocket, message + cursor, 1,
+          long result=0;
+          try {
+              result = recv(ucpServerSocket, message + cursor, sizeof(message)-cursor,
 #ifdef _WIN32
-                             NULL
+                      NULL
 #else
-                             0
+                            0
 #endif
-          );
-        } catch (char* e) {
-			cout << "Exception..." << endl;
-          // ex
-        }
-		
-		check1Count++;
-		
-		if (check1Count > 5) {
-			break;
-		}
-		
-        cursor++;
+              );
 
-        if ((message != nullptr) && (message[0] == '\0')) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        } else {
-          check1 = message[cursor - 1] == '\n';
-        }
+          } catch (char *e) {
+              cout << "Exception..." << endl;
+              // ex
+          }
+
+          if (++check1Count > 5) {
+              break;
+          }
+
+          cursor += result;
+
+          if ((message != nullptr) && (message[0] == '\0')) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+          } else {
+            check1 = message[cursor - 1] == '\n';
+          }
       }
 
       Log::info("Processing command:");
@@ -835,7 +835,7 @@ class UCPClient {
                 WSAGetLastError());
           cerr << outputBuffer << endl;
           Log::error(outputBuffer);
-		  
+
 		  closesocket(ucpServerSocket);
 	      WSACleanup();
 		  reconnecting = true;
@@ -846,8 +846,8 @@ class UCPClient {
 		  }
 		  reconnecting = false;
 		  lastDowntime = time(0);
-			
-		} 
+
+		}
 #else
 	    if (!reconnecting) {
           snprintf(outputBuffer, sizeof outputBuffer,
@@ -860,7 +860,7 @@ class UCPClient {
 #endif
 		continue;
       }
-	  
+
 	  #ifdef _WIN32
       // Nothing
       #else
@@ -878,7 +878,7 @@ class UCPClient {
               success = reconnect();
             }
             reconnecting = false;
-            lastDowntime = time(0); 
+            lastDowntime = time(0);
         }
       #endif
 
@@ -1050,7 +1050,7 @@ class UCPClient {
   }
 
   boolean hasWorkReady() { return workAvailable; }
-  
+
   unsigned long long getLastDowntime() {
 	  return lastDowntime;
   }
